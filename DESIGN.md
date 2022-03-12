@@ -9,7 +9,25 @@ A new root certificate is generated if this is the first time the user has start
 Two new files are created in the project directory: a bearclaw project file and a python script
 that connects to the bearclaw proxy RPC port and registers callbacks.
 
-The bearclaw UI offers to create a new methodology based on the
+The user defines what methodology they want to use. A methodology is an ordered list of tests
+to be performed. The purpose of the methodology is to keep the user organized and to track what
+still needs to be done.
+
+All testing in bearclaw is performed against a step in the methodology (referred to as a
+methodology node), a specific task assigned to that methodology node (e.g. a location in the
+sitemap), and a user-defined description of the specific test they are performing.
+
+For example:
+
+- Methodology node: Reflected cross-site scripting
+  - Assigned task: Endpoint at https://example.com/target1.php
+    - Test: Look for reflected parameter values
+    - Test: Determine if parameter 'foo' is vulnerable
+  - Assigned task: Endpoint at https://example.com/target2.php
+    - Test: Look for reflected parameter values
+    - Test: Determine if parameter 'bar' is vulnerable
+
+The bearclaw UI offers to optionally create a new methodology based on the
 [OWASP WSTG](https://owasp.org/www-project-web-security-testing-guide/). The user can add or
 remove methodology nodes from the UI or from a python script. The methodology nodes form a tree.
 
