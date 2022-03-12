@@ -84,16 +84,37 @@ of additional scripts can be running at the same time. They are not required to 
 can be started and stopped at any time.
 
 The user configures their browser to connect to the bearclaw HTTP(S) proxy. If needed, the user
-installs the bearclaw root certificate into the browser trust store.
+installs the bearclaw root certificate into the browser trust store. Also, the user installs the
+bearclaw browser add-on if it is not already installed.
 
 The user browses the target website in the browser. The proxy stores the requests and responses
 that are in scope in the project file.
 
+The bearclaw browser add-on enriches the data the bearclaw proxy receives for each request with
+the following information:
+
+- The URL in the browser location bar, including URL fragment
+- When the tab was loaded
+- What casued the request, if known (user interaction, javascript, etc)
+
+The browser add-on also tells the bearclaw proxy when some javascript events occur. These events
+are:
+
+- javascript error
+- console prints
+- postMessage events
+- local storage modification
+- indexed db modifications
+- session storage modification
+- cookie modification
+- window object property addition or removal
+
 The user then switches to the bearclaw UI.
 
 The user looks at the proxy history view to see a list of all in-scope requests that have passed
-through the proxy. The user clicks on some requests to drill down into the details showing the
-contents of the request and response and the analysis the main python script has done.
+through the proxy and any javascript events reported by the browser add-on. The user clicks on
+some requests to drill down into the details showing the contents of the request and response and
+the analysis the main python script has done.
 
 The user switches to the sitemap view. This shows each location in all in-scope targets in a tree.
 For each location in the sitemap, this shows the number of:
@@ -136,6 +157,8 @@ the user to the testing detail view.
 
 From the testing detail view, the user can perform testing in the following ways:
 
+- From the browser add-on, the user can create or select this test. The user can then test from
+  the browser.
 - Click a button to capture proxy traffic for the current test. The user can then test from the
   browser.
 - Manually modify and re-issue requests that were previously captured by the the proxy.
