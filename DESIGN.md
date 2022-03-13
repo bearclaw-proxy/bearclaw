@@ -20,10 +20,10 @@ sitemap), and a user-defined description of the specific test they are performin
 For example:
 
 - Methodology node: Reflected cross-site scripting
-  - Assigned task: Endpoint at https://example.com/target1.php
+  - Assigned item: Endpoint at https://example.com/target1.php
     - Test: Look for reflected parameter values
     - Test: Determine if parameter 'foo' is vulnerable
-  - Assigned task: Endpoint at https://example.com/target2.php
+  - Assigned item: Endpoint at https://example.com/target2.php
     - Test: Look for reflected parameter values
     - Test: Determine if parameter 'bar' is vulnerable
 
@@ -121,16 +121,14 @@ For each location in the sitemap, this shows the number of:
 
 - methodology nodes that the user needs to decide if it should be assigned to
 - methodology nodes it is assigned to but has not been completed
+- individual tests in all methodology nodes that have not been completed
 - issues the user has identified
 
 For each location that has not been assigned, the user determines which, if any, methodology nodes
 it should be assigned to.
 
-The user switches to the endpoint list view. For each endpoint, this shows the number of:
-
-- methodology nodes that the user needs to decide if it should be assigned to
-- methodology nodes it is assigned to but has not been completed
-- issues the user has identified
+The user switches to the endpoint list view. This displays the same information about endpoints
+that the sitemap view displays about locations.
 
 For each endpoint that has not been assigned, the user determines which, if any, methodology nodes
 it should be assigned to.
@@ -138,7 +136,8 @@ it should be assigned to.
 The user switches to the methodology list view. This shows each methodology node and the number of:
 
 - recently discovered locations or endpoints that the user needs to assign or ignore
-- items that need to be tested
+- assigned items that have not been completed
+- individual tests in all methodology nodes that have not been completed
 - issues the user has identified
 
 The user drills down into a methodology node from this view.
@@ -148,12 +147,15 @@ that can be assigned to the methodology node. They mark each one as either assig
 
 Additionally, there is a list of items that the user can test. The layout of this screen depends
 on the type of testing the methodology node is configured for. The user can mark these items
-as complete or drill down into them. The user drills down into one of these items to enter the
-testing list view.
+as complete or drill down into them. They cannot mark the item as complete if there are any
+incomplete tests for them. The user drills down into one of these items to enter the testing list
+view.
 
 The testing list view asks the user to either create a new test by typing a description of the
-testing they intend to perform, or selecting a previously created test from a list. This then takes
-the user to the testing detail view.
+testing they intend to perform, or selecting a previously created test from a list. The list shows
+the number of incomplete requests in each test that need to be reviewed.
+
+The user creates a test and drills down to the testing detail view.
 
 From the testing detail view, the user can perform testing in the following ways:
 
@@ -175,6 +177,10 @@ requests from the UI, and thorough testing such as running wordlists through par
 python script. The user might create their own library of python scripts for different types of
 testing they commonly do.
 
+Requests that are created from a python script are by default marked as incomplete, although this
+status can be updated from the python script if desired. The user must review these requests in
+the UI and mark them as complete before the test can be completed.
+
 The python scripts can evaluate each request/response that it generates and tag it or any of its
 components that it finds interesting. These tags are visible in the UI and can help draw the
 user's attention to interesting things.
@@ -184,12 +190,18 @@ After performing testing, the user can select requests and create issues from th
 Additionally, the user can enter testing notes on a specific request, the testing detail view, and
 the methodology detail view.
 
-Once the user is finished testing this assigned item in the methodology node, they go back to the
-methodology detail view and mark the item as complete, then move on to the next assigned item or
-another methodology node.
+Once the user has reviewed and marked as complete all script-generated requests in the test, the
+user marks the test as complete and moves on to the next test. Once they have marked all tests
+as complete, they mark the assigned item as complete. When they have completed all assigned items
+for the methodology node, they move on to the next step in the methodology. The application keeps
+track of the number of open items assigned to the methodology node so the user does not need to
+manually mark them as complete. If any new requests, tests, or items are assigned to the
+methodology node, or new parameters are found for endpoints assigned to the methodology node, the
+application marks all relevent things as incomplete.
 
 As the user continues to test the target application, new locations or endpoints may be identified.
-The application keeps track of these so the user doesn't miss anything.
+The application keeps track of these so the user doesn't forget to assign them to methodology
+nodes.
 
 There are additional views the user can access to analyze the data collected by the proxy:
 
