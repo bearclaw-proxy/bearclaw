@@ -95,7 +95,7 @@ the following information:
 
 - The URL in the browser location bar, including URL fragment
 - When the tab was loaded
-- What casued the request, if known (user interaction, javascript, etc)
+- What caused the request, if known (user interaction, javascript, etc)
 
 The browser add-on also tells the bearclaw proxy when some javascript events occur. These events
 are:
@@ -128,16 +128,14 @@ For each location that has not been assigned, the user determines which, if any,
 it should be assigned to.
 
 The user switches to the endpoint list view. This displays the same information about endpoints
-that the sitemap view displays about locations.
-
-For each endpoint that has not been assigned, the user determines which, if any, methodology nodes
-it should be assigned to.
+that the sitemap view displays about locations. For each endpoint that has not been assigned, the
+user determines which, if any, methodology nodes it should be assigned to.
 
 The user switches to the methodology list view. This shows each methodology node and the number of:
 
 - recently discovered locations or endpoints that the user needs to assign or ignore
 - assigned items that have not been completed
-- individual tests in all methodology nodes that have not been completed
+- individual tests that have not been completed
 - issues the user has identified
 
 The user drills down into a methodology node from this view.
