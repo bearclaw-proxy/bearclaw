@@ -222,6 +222,7 @@ There are additional views the user can access to analyze the data collected by 
 
 - *Parameter view*: Explore the parameters seen by the application, their values, and where they
   occured.
+- *Testing view*: All incomplete tests accross all methodology nodes and assigned items.
 - *Issue view*: All issues created by the user.
 - *Notes view*: Everything that the user has entered testing notes on.
 
