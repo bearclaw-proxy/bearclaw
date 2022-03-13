@@ -185,6 +185,21 @@ The python scripts can evaluate each request/response that it generates and tag 
 components that it finds interesting. These tags are visible in the UI and can help draw the
 user's attention to interesting things.
 
+A python script can register to watch every request or response sent through the proxy. It can then
+assign these requests to specific tests, even if the request was not specifically
+created for that test. A single request can be assigned to multiple tests. This functionality is
+intended to support the following scenarios:
+
+- Watching for strings inside requests that could indicate a vulnerability and assigning these
+  requests for manual review to the appropriate methodology node. For example, if a string
+  potentially indiciating a stack trace is found, a script could assign that request to a
+  test "possible stack traces found in responses" in the methodology node "Testing for Improper
+  Error Handling".
+- Source / Sink analysis. For example, when testing for persistent cross-site scripting, a script
+  could generate unique tags in payloads for each source endpoint. It could then watch all future
+  responses for these unique tags. If it finds one, it can assign this request to a "Sink Analysis"
+  test on the originating source endpoint for the user to review.
+
 After performing testing, the user can select requests and create issues from them.
 
 Additionally, the user can enter testing notes on a specific request, the testing detail view, and
