@@ -57,6 +57,7 @@ to perform any of the following tasks on each request as it passes through the p
 - Before the request is sent to the server:
   - Determine if the request is in scope
   - Modify the request
+  - Send the request through an upstream proxy
 - Before the response is sent to the client:
   - Modify the response
   - Determine if the request is calling an endpoint that runs code on the server. If it is:
