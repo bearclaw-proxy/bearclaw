@@ -60,13 +60,6 @@ to perform any of the following tasks on each request as it passes through the p
   - Send the request through an upstream proxy
 - Before the response is sent to the client:
   - Modify the response
-  - Determine if the request is calling an endpoint that runs code on the server. If it is:
-    - For each parameter in the request, identify whether the parameter is a:
-      - meaningful input to the server side functionality
-      - location that is used to designate server side functionality,
-      - not meaningful (e.g. a timestamp).
-  - Determine if the request location should be added to the sitemap
-    - Might ignore requests that return 404 or redirects, for example
 - Custom encodings
   - If there is a message or parameter encoding that is not supported by bearclaw, the user can
     define a custom one here that implements identify, decode, and encode functions. These
@@ -115,7 +108,21 @@ The user then switches to the bearclaw UI.
 The user looks at the proxy history view to see a list of all in-scope requests that have passed
 through the proxy and any javascript events reported by the browser add-on. The user clicks on
 some requests to drill down into the details showing the contents of the request and response and
-the analysis the main python script has done.
+any modifications the main python script has done.
+
+For each request, the user can optionally add the location of the request to the sitemap if it
+does not already exist. Additionally, the user can either assign the requst to an existing
+endpoint or create a new endpoint for the request. This user creates a new endpoint by identifying
+whether each parameter in the request is:
+
+- a meaningful input to the server side functionality
+- a location that is used to designate server side functionality,
+- not meaningful (e.g. a timestamp).
+
+While it is possible to create sitemap locations and endpoints from the UI, the user is expected
+to create a script to do this. Scripts can additionally create locations and endpoints that have
+not yet been visited by a request through the proxy, for example after analyzing html content
+for links.
 
 The user switches to the sitemap view. This shows each location in all in-scope targets in a tree.
 For each location in the sitemap, this shows the number of:
