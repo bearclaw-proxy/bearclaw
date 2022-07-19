@@ -62,8 +62,22 @@ what is still left to do. Finally, it should allow me to explore all the things 
 
 ### Compile-time only
 
-- Rust
 - Capnproto (capnpc binary)
+- Rust
+
+## Build Instructions
+
+cargo build
+
+## How to Use
+
+### bearclaw-proxy
+
+Tracing can be enabled by setting the `RUSTLOG` environment variable. For example,
+`export RUSTLOG=trace` will print detailed trace information to the console.
+
+[tokio console](https://github.com/tokio-rs/console) can be used to debug a running instance
+of bearclaw-proxy.
 
 ## License
 
