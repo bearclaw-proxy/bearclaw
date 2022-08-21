@@ -9,10 +9,10 @@ use tokio::{
 
 const DEFAULT_RECEIVE_BUFFER_SIZE_IN_BYTES: usize = 4 * 1024 * 1024;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     ConnectionResetByPeer,
     IOFailure(std::io::Error),
     ProtocolViolation,
@@ -31,13 +31,13 @@ impl From<std::string::FromUtf8Error> for Error {
 }
 
 /// A connection to the bootstrap proxy that sends requests through the proxy.
-pub struct Forwarder {
+pub(crate) struct Forwarder {
     stream: BufWriter<TcpStream>,
     recv_buf: BytesMut,
 }
 
 impl Forwarder {
-    pub async fn connect(endpoint: &str) -> Result<Self> {
+    pub(crate) async fn connect(endpoint: &str) -> Result<Self> {
         let stream = TcpStream::connect(endpoint).await?;
         Ok(Self {
             stream: BufWriter::new(stream),
@@ -45,7 +45,7 @@ impl Forwarder {
         })
     }
 
-    pub async fn forward(
+    pub(crate) async fn forward(
         &mut self,
         host: &str,
         port: u16,
@@ -128,19 +128,19 @@ where
 }
 
 /// A connection to the bootstrap proxy that receives messages intercepted by the proxy.
-pub struct Interceptor {
+pub(super) struct Interceptor {
     stream: TcpStream,
     recv_buf: BytesMut,
 }
 
 impl Interceptor {
-    pub async fn connect(endpoint: &str) -> Result<Self> {
+    pub(super) async fn connect(endpoint: &str) -> Result<Self> {
         let stream = TcpStream::connect(endpoint).await?;
         let recv_buf = BytesMut::with_capacity(DEFAULT_RECEIVE_BUFFER_SIZE_IN_BYTES);
         Ok(Self { stream, recv_buf })
     }
 
-    pub async fn intercept(&mut self) -> Result<InterceptedMessage> {
+    pub(super) async fn intercept(&mut self) -> Result<InterceptedMessage> {
         self.stream.write_u8(2).await?;
 
         loop {
@@ -157,8 +157,9 @@ impl Interceptor {
     }
 }
 
-#[derive(Debug)]
-pub struct InterceptedMessage {
+// TODO: Remove clone when unneeded
+#[derive(Clone, Debug)]
+pub(crate) struct InterceptedMessage {
     pub received_at: chrono::DateTime<chrono::Local>,
     pub host: String,
     pub port: u16,
@@ -228,6 +229,18 @@ impl InterceptedMessage {
     }
 }
 
+fn check_len<B>(buf: &mut B, len: usize) -> bool
+where
+    B: Buf,
+{
+    if buf.remaining() < len {
+        return false;
+    }
+
+    buf.advance(len);
+    true
+}
+
 fn check_bytes<B>(buf: &mut B) -> bool
 where
     B: Buf,
@@ -244,18 +257,6 @@ where
     } else {
         false
     }
-}
-
-fn check_len<B>(buf: &mut B, len: usize) -> bool
-where
-    B: Buf,
-{
-    if buf.remaining() < len {
-        return false;
-    }
-
-    buf.advance(len);
-    true
 }
 
 fn get_string<B>(buf: &mut B) -> Result<String>
