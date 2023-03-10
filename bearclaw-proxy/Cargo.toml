@@ -7,20 +7,26 @@ edition = "2021"
 
 [dependencies]
 async-channel = "1"
+blake3 = "1"
 bytes = "1"
-capnp = { version = "0.14" }
-capnp-rpc = { version = "0.14" }
+capnp = { version = "0.15" }
+capnp-rpc = { version = "0.15" }
 chrono = "0.4"
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 console-subscriber = "0.1"
 futures = "0.3"
 git-version = "0.3"
 num_cpus = "1"
+num_enum = "0.5"
+rusqlite = "0.28"
+socket2 = "0.4"
 tokio = { version = "1", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+winnow = "0.3"
+zstd = "0.12"
 
 [build-dependencies]
-capnpc = "0.14"
+capnpc = "0.15"
 vergen = { version = "7", features = ["build", "cargo", "git", "rustc"] }

@@ -12,11 +12,11 @@ def printReceivedAt(result, message):
 
 def printConnectionInfo(result, message):
     print(result)
-    return message.request()
+    return message.requestBytes()
 
 def printRequest(result, message):
     print(result)
-    return message.response()
+    return message.responseBytes()
 
 def printResponse(result):
     print(result)
@@ -27,7 +27,7 @@ class InterceptedMessageSubscriberImpl(bearclaw_capnp.InterceptedMessageSubscrib
         # Sadly we can't use .wait() in callabcks, which makes this code a lot more complicated :(
         # This function returns a promise, so we have to construct a promise that does all the
         # network calls we want and return it. Surely there's a better way to do this?!
-        return message.receivedAt().then(lambda x: printReceivedAt(x, message)) \
+        return message.requestTimestamp().then(lambda x: printReceivedAt(x, message)) \
             .then(lambda x: printConnectionInfo(x, message)) \
             .then(lambda x: printRequest(x, message)) \
             .then(lambda x: printResponse(x))

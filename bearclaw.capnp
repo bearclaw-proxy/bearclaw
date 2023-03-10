@@ -49,10 +49,11 @@ interface InterceptedMessageSubscriber {
 }
 
 interface InterceptedMessage {
-	receivedAt @0 () -> (time :Time);
-	connectionInfo @1 () -> (conn :ConnectionInfo);
-	request @2 () -> (request :Data);
-	response @3 () -> (response :Option(Data));
+	connectionInfo @0 () -> (conn :ConnectionInfo);
+	requestTimestamp @1 () -> (time :Time);
+	requestBytes @2 () -> (request :Data);
+	responseTimestamp @3 () -> (time :Time);
+	responseBytes @4 () -> (response :HttpResponse);
 	# May not contain a response if there was an error forwarding the request. This should be changed
 	# to return a `Result` with the recorded error details.
 }
@@ -62,6 +63,21 @@ struct Time {
 	# Number of non-leap seconds since January 1, 1970 (unix timestamp)
 	nsecs @1 :UInt32;
 	# Number of nanoseconds since the last second boundary
+}
+
+struct HttpResponse {
+	union {
+		ok @0 :Data;
+		err @1 :HttpError;
+	}
+}
+
+enum HttpError {
+	dns @0;
+	couldNotConnect @1;
+	connectionClosed @2;
+	responseTimeout @3;
+	responseTooLarge @4;
 }
 
 interface Subscription {}
@@ -84,4 +100,5 @@ struct BuildInfo {
 	cargoFeatures @12 :Text;
 	cargoProfile @13 :Text;
 	cargoTargetTriple @14 :Text;
+	dbEngineVersion @15 :Text;
 }

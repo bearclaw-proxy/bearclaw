@@ -56,7 +56,7 @@ what is still left to do. Finally, it should allow me to explore all the things 
 - GTK4
 - GTKSourceView5
 - OpenSSL
-- Sqlite3
+- Sqlite3 >= 3.37.0 with FTS5
 - Zstd
 
 ### Compile-time only
@@ -81,8 +81,9 @@ cargo build
 
 ```bash
 bearclaw-proxy \
-    --bootstrap-proxy-endpoint <BOOTSTRAP_PROXY_ENDPOINT> \
-    --rpc-endpoint <RPC_ENDPOINT>
+    --bootstrap-proxy-endpoint $BOOTSTRAP_PROXY_ENDPOINT \
+    --rpc-endpoint $RPC_ENDPOINT \
+    --project-file $PATH_TO_PROJECT_FILE
 ```
 
 This is an initial prototype of the proxy that bootstraps itself by using an existing

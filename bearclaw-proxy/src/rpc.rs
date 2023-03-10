@@ -18,6 +18,7 @@ const MAX_MESSAGE_OBJECTS_PER_RPC_CONNECTION: usize = 128;
 
 pub(super) struct BearclawImpl {
     bootstrap_proxy_endpoint: Arc<String>,
+    storage: crate::storage::Channel,
     proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
     shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
     death_notification_tx: tokio::sync::mpsc::Sender<()>,
@@ -31,6 +32,7 @@ pub(super) struct BearclawImpl {
 impl BearclawImpl {
     pub(super) fn new(
         bootstrap_proxy_endpoint: Arc<String>,
+        storage: crate::storage::Channel,
         proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
         shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
         death_notification_tx: tokio::sync::mpsc::Sender<()>,
@@ -39,6 +41,7 @@ impl BearclawImpl {
     ) -> Self {
         Self {
             bootstrap_proxy_endpoint,
+            storage,
             proxy_command_tx,
             shutdown_command_tx,
             death_notification_tx,
@@ -52,7 +55,6 @@ impl BearclawImpl {
 }
 
 impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
-    // BUG: these tracing annotations don't seem to work
     #[tracing::instrument(level = "trace", skip_all)]
     fn send(
         &mut self,
@@ -122,6 +124,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
 
         let proxy_command_tx = self.proxy_command_tx.clone();
         let subscriber = pry!(pry!(params.get()).get_subscriber());
+        let storage = self.storage.clone();
         let num_active_subscriptions = self.num_active_subscriptions.clone();
         let num_active_messages = self.num_active_messages.clone();
         let thread_id = self.thread_id;
@@ -147,6 +150,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
             let subscription = SubscriptionImpl::new(
                 interceptor_rx,
                 subscriber,
+                storage,
                 num_active_subscriptions,
                 num_active_messages,
                 thread_id,
@@ -206,6 +210,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         info.set_cargo_features(env!("VERGEN_CARGO_FEATURES"));
         info.set_cargo_profile(env!("VERGEN_CARGO_PROFILE"));
         info.set_cargo_target_triple(env!("VERGEN_CARGO_TARGET_TRIPLE"));
+        info.set_db_engine_version(&format!("sqlite {}", rusqlite::version()));
 
         Promise::ok(())
     }
@@ -236,10 +241,9 @@ struct SubscriptionImpl {
 
 impl SubscriptionImpl {
     fn new(
-        mut interceptor_rx: tokio::sync::broadcast::Receiver<
-            crate::bootstrap_proxy::InterceptedMessage,
-        >,
+        mut interceptor_rx: tokio::sync::broadcast::Receiver<crate::storage::HistoryId>,
         subscriber: bearclaw_capnp::intercepted_message_subscriber::Client,
+        storage: crate::storage::Channel,
         num_active_subscriptions: Rc<Cell<usize>>,
         num_active_messages: Rc<Cell<usize>>,
         thread_id: usize,
@@ -255,13 +259,14 @@ impl SubscriptionImpl {
                 let _death_notification_tx = death_notification_tx;
                 loop {
                     tokio::select!(
-                        msg = interceptor_rx.recv() => {
-                            if let Ok(msg) = msg {
+                        history_id = interceptor_rx.recv() => {
+                            if let Ok(history_id) = history_id {
                                 if num_active_messages.get() >= MAX_MESSAGE_OBJECTS_PER_RPC_CONNECTION {
                                     tracing::warn!("Max message objects exceeded for RPC connection resulting in silently dropped subscription");
                                     return;
                                 }
                                 num_active_messages.set(num_active_messages.get() + 1);
+                                let msg = storage.get_http_history(history_id).await.unwrap();
                                 tracing::trace!(num_active_messages = num_active_messages.get());
                                 tracing::trace!("Performing subscriber callback for intercepted message");
                                 let mut request = subscriber.push_message_request();
@@ -278,7 +283,8 @@ impl SubscriptionImpl {
                         }
                     );
                 }
-            });
+            })
+            .unwrap();
 
         Self {
             num_active_subscriptions,
@@ -302,15 +308,12 @@ impl Drop for SubscriptionImpl {
 impl bearclaw_capnp::subscription::Server for SubscriptionImpl {}
 
 struct InterceptedMessageImpl {
-    msg: crate::bootstrap_proxy::InterceptedMessage,
+    msg: crate::storage::HttpMessage,
     num_active_messages: Rc<Cell<usize>>,
 }
 
 impl InterceptedMessageImpl {
-    fn new(
-        msg: crate::bootstrap_proxy::InterceptedMessage,
-        num_active_messages: Rc<Cell<usize>>,
-    ) -> Self {
+    fn new(msg: crate::storage::HttpMessage, num_active_messages: Rc<Cell<usize>>) -> Self {
         Self {
             msg,
             num_active_messages,
@@ -319,18 +322,6 @@ impl InterceptedMessageImpl {
 }
 
 impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
-    #[tracing::instrument(level = "trace", skip_all)]
-    fn received_at(
-        &mut self,
-        _: bearclaw_capnp::intercepted_message::ReceivedAtParams,
-        mut results: bearclaw_capnp::intercepted_message::ReceivedAtResults,
-    ) -> capnp::capability::Promise<(), capnp::Error> {
-        let mut time = results.get().init_time();
-        time.set_secs(self.msg.received_at.timestamp());
-        time.set_nsecs(self.msg.received_at.timestamp_subsec_nanos());
-        Promise::ok(())
-    }
-
     #[tracing::instrument(level = "trace", skip_all)]
     fn connection_info(
         &mut self,
@@ -345,25 +336,63 @@ impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn request(
+    fn request_timestamp(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::RequestParams,
-        mut results: bearclaw_capnp::intercepted_message::RequestResults,
+        _: bearclaw_capnp::intercepted_message::RequestTimestampParams,
+        mut results: bearclaw_capnp::intercepted_message::RequestTimestampResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let mut time = results.get().init_time();
+        time.set_secs(self.msg.request_time.timestamp());
+        time.set_nsecs(self.msg.request_time.timestamp_subsec_nanos());
+        Promise::ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn request_bytes(
+        &mut self,
+        _: bearclaw_capnp::intercepted_message::RequestBytesParams,
+        mut results: bearclaw_capnp::intercepted_message::RequestBytesResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
         results.get().set_request(&self.msg.request);
         Promise::ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn response(
+    fn response_timestamp(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::ResponseParams,
-        mut results: bearclaw_capnp::intercepted_message::ResponseResults,
+        _: bearclaw_capnp::intercepted_message::ResponseTimestampParams,
+        mut results: bearclaw_capnp::intercepted_message::ResponseTimestampResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let mut time = results.get().init_time();
+        time.set_secs(self.msg.response_time.timestamp());
+        time.set_nsecs(self.msg.response_time.timestamp_subsec_nanos());
+        Promise::ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn response_bytes(
+        &mut self,
+        _: bearclaw_capnp::intercepted_message::ResponseBytesParams,
+        mut results: bearclaw_capnp::intercepted_message::ResponseBytesResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
         let mut response = results.get().init_response();
-        match self.msg.response.len() {
-            0 => response.set_none(()),
-            _ => pry!(response.set_some(&self.msg.response)),
+        match &self.msg.response {
+            Ok(m) => response.set_ok(m),
+            Err(err) => match err {
+                crate::storage::HttpError::Dns => response.set_err(bearclaw_capnp::HttpError::Dns),
+                crate::storage::HttpError::CouldNotConnect => {
+                    response.set_err(bearclaw_capnp::HttpError::CouldNotConnect)
+                }
+                crate::storage::HttpError::ConnectionClosed => {
+                    response.set_err(bearclaw_capnp::HttpError::ConnectionClosed)
+                }
+                crate::storage::HttpError::ResponseTimeout => {
+                    response.set_err(bearclaw_capnp::HttpError::ResponseTimeout)
+                }
+                crate::storage::HttpError::ResponseTooLarge => {
+                    response.set_err(bearclaw_capnp::HttpError::ResponseTooLarge)
+                }
+            },
         }
         Promise::ok(())
     }

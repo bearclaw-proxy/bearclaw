@@ -157,15 +157,14 @@ impl Interceptor {
     }
 }
 
-// TODO: Remove clone when unneeded
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct InterceptedMessage {
-    pub received_at: chrono::DateTime<chrono::Local>,
-    pub host: String,
-    pub port: u16,
-    pub is_https: bool,
-    pub request: Bytes,
-    pub response: Bytes,
+    pub(crate) received_at: chrono::DateTime<chrono::Local>,
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) is_https: bool,
+    pub(crate) request: Bytes,
+    pub(crate) response: Bytes,
 }
 
 impl std::fmt::Display for InterceptedMessage {
@@ -215,7 +214,9 @@ impl InterceptedMessage {
 
     fn parse(buf: &mut BytesMut) -> Result<Self> {
         Ok(Self {
-            received_at: chrono::Local.timestamp(buf.get_i64(), buf.get_u32()),
+            received_at: chrono::Local
+                .timestamp_opt(buf.get_i64(), buf.get_u32())
+                .unwrap(),
             host: get_string(buf)?,
             port: buf.get_u16(),
             is_https: match get_string(buf)?.as_ref() {
