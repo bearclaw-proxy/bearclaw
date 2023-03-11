@@ -305,17 +305,17 @@ async fn proxy(
                 let response = if message.response.is_empty() {
                     Err(storage::HttpError::CouldNotConnect)
                 } else {
-                    Ok(message.response.clone())
+                    Ok(message.response)
                 };
                 let id = storage_channel.store_http_history(
                     None,
                     storage::HttpMessage {
                         request_time: message.received_at,
                         response_time: message.received_at,
-                        host: message.host.clone(),
+                        host: message.host,
                         port: message.port,
                         is_https: message.is_https,
-                        request: message.request.clone(),
+                        request: message.request,
                         response,
                     },
                 ).await?;
