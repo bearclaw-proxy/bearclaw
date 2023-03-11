@@ -67,7 +67,9 @@ async fn main() -> Result<()> {
     tracing::info!("Opening Project File");
     let db = storage::Database::open_or_create(&args.project_file)?;
     let (storage_tx, storage_rx) = tokio::sync::mpsc::channel(STORAGE_CHANNEL_CAPACITY);
-    let storage_thread = std::thread::spawn(move || db.run(storage_rx));
+    let storage_thread = std::thread::Builder::new()
+        .name("storage".to_owned())
+        .spawn(move || db.run(storage_rx))?;
     let storage_channel = storage::Channel::from_sender(storage_tx);
 
     tracing::info!("Connecting to Bootstrap Proxy");
@@ -396,88 +398,92 @@ impl RpcSpawner {
             // Why can't this just spawn local tasks onto the existing tokio thread pool threads
             // instead of creating its own separate threads? This is based on the example in the
             // documentation for tokio::task::LocalSet.
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                let local = tokio::task::LocalSet::new();
+            std::thread::Builder::new()
+                .name(format!("rpc-{thread_id}"))
+                .spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let local = tokio::task::LocalSet::new();
 
-                tokio::task::Builder::new()
-                    .name(&format!("rpc-spawner-tid{thread_id}"))
-                    .spawn_local_on(
-                        async move {
-                            tracing::trace!("waiting for capnp rpc spawn request");
+                    tokio::task::Builder::new()
+                        .name(&format!("rpc-spawner-tid{thread_id}"))
+                        .spawn_local_on(
+                            async move {
+                                tracing::trace!("waiting for capnp rpc spawn request");
 
-                            while let Ok((client_id, permit, stream)) = tokio::select! {
-                                result = recv.recv() => { result }
-                                _ = shutdown_notification_rx.changed() => {
-                                    tracing::trace!("shutting down");
-                                    return;
+                                while let Ok((client_id, permit, stream)) = tokio::select! {
+                                    result = recv.recv() => { result }
+                                    _ = shutdown_notification_rx.changed() => {
+                                        tracing::trace!("shutting down");
+                                        return;
+                                    }
+                                } {
+                                    tracing::trace!(
+                                        "creating capnp rpc system for client {}",
+                                        client_id
+                                    );
+
+                                    let (reader, writer) =
+                                        tokio_util::compat::TokioAsyncReadCompatExt::compat(stream)
+                                            .split();
+                                    let network = capnp_rpc::twoparty::VatNetwork::new(
+                                        reader,
+                                        writer,
+                                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
+                                        Default::default(),
+                                    );
+                                    let initial_object: bearclaw_capnp::bearclaw::Client =
+                                        capnp_rpc::new_client(rpc::BearclawImpl::new(
+                                            bootstrap_proxy_endpoint.clone(),
+                                            storage.clone(),
+                                            proxy_command_tx.deref().clone(),
+                                            shutdown_command_tx.deref().clone(),
+                                            death_notification_tx.clone(),
+                                            thread_id,
+                                            client_id,
+                                        ));
+                                    let rpc_system = capnp_rpc::RpcSystem::new(
+                                        Box::new(network),
+                                        Some(initial_object.client),
+                                    );
+
+                                    let mut shutdown_notification_rx =
+                                        shutdown_notification_rx.clone();
+
+                                    tokio::task::Builder::new()
+                                        .name(&format!("rpc-tid{thread_id}-cid{client_id}"))
+                                        .spawn_local(async move {
+                                            tracing::trace!("executing capnp rpc system");
+                                            let result = tokio::select! {
+                                                result = rpc_system => { result }
+                                                _ = shutdown_notification_rx.changed() => {
+                                                    // TODO: Is there a way to gracefully shut down
+                                                    // the rpc_system?
+                                                    tracing::trace!("shutting down");
+                                                    return Ok(());
+                                                }
+                                            };
+                                            drop(permit);
+
+                                            tracing::trace!(
+                                                "capnp rpc system exited with result: {result:?}"
+                                            );
+                                            tracing::debug!("rpc client {client_id} disconnected");
+
+                                            result
+                                        })
+                                        .unwrap();
                                 }
-                            } {
-                                tracing::trace!(
-                                    "creating capnp rpc system for client {}",
-                                    client_id
-                                );
+                            },
+                            &local,
+                        )
+                        .unwrap();
 
-                                let (reader, writer) =
-                                    tokio_util::compat::TokioAsyncReadCompatExt::compat(stream)
-                                        .split();
-                                let network = capnp_rpc::twoparty::VatNetwork::new(
-                                    reader,
-                                    writer,
-                                    capnp_rpc::rpc_twoparty_capnp::Side::Server,
-                                    Default::default(),
-                                );
-                                let initial_object: bearclaw_capnp::bearclaw::Client =
-                                    capnp_rpc::new_client(rpc::BearclawImpl::new(
-                                        bootstrap_proxy_endpoint.clone(),
-                                        storage.clone(),
-                                        proxy_command_tx.deref().clone(),
-                                        shutdown_command_tx.deref().clone(),
-                                        death_notification_tx.clone(),
-                                        thread_id,
-                                        client_id,
-                                    ));
-                                let rpc_system = capnp_rpc::RpcSystem::new(
-                                    Box::new(network),
-                                    Some(initial_object.client),
-                                );
-
-                                let mut shutdown_notification_rx = shutdown_notification_rx.clone();
-
-                                tokio::task::Builder::new()
-                                    .name(&format!("rpc-tid{thread_id}-cid{client_id}"))
-                                    .spawn_local(async move {
-                                        tracing::trace!("executing capnp rpc system");
-                                        let result = tokio::select! {
-                                            result = rpc_system => { result }
-                                            _ = shutdown_notification_rx.changed() => {
-                                                // TODO: Is there a way to gracefully shut down
-                                                // the rpc_system?
-                                                tracing::trace!("shutting down");
-                                                return Ok(());
-                                            }
-                                        };
-                                        drop(permit);
-
-                                        tracing::trace!(
-                                            "capnp rpc system exited with result: {result:?}"
-                                        );
-                                        tracing::debug!("rpc client {client_id} disconnected");
-
-                                        result
-                                    })
-                                    .unwrap();
-                            }
-                        },
-                        &local,
-                    )
-                    .unwrap();
-
-                rt.block_on(local);
-            });
+                    rt.block_on(local);
+                })
+                .unwrap();
         }
 
         Self { sender: send }
