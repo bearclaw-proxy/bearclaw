@@ -25,7 +25,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 winnow = "0.3"
-zstd = "0.12"
+zstd = { version = "0.12", features = ["pkg-config"] }
 
 [build-dependencies]
 capnpc = "0.15"
