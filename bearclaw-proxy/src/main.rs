@@ -85,13 +85,12 @@ async fn main() -> Result<()> {
         tokio::sync::broadcast::channel(PROXY_BROADCAST_CHANNEL_CAPACITY);
     // subscriptions will be created from the tx side
     drop(interceptor_rx);
-
     let (proxy_command_tx, proxy_command_rx) =
         tokio::sync::mpsc::channel(PROXY_COMMAND_CHANNEL_CAPACITY);
 
     tokio::task::Builder::new()
         .name("proxy-inteceptor")
-        .spawn(proxy(
+        .spawn(proxy_task(
             interceptor,
             proxy_command_rx,
             interceptor_tx.clone(),
@@ -118,7 +117,7 @@ async fn main() -> Result<()> {
 
     tokio::task::Builder::new()
         .name("rpc-socket-listener")
-        .spawn(rpc(
+        .spawn(rpc_task(
             rpc_listener,
             rpc_limiter,
             rpc_spawner,
@@ -283,7 +282,7 @@ struct Args {
     project_file: PathBuf,
 }
 
-async fn proxy(
+async fn proxy_task(
     mut interceptor: bootstrap_proxy::Interceptor,
     mut command_rx: tokio::sync::mpsc::Receiver<ProxyCommand>,
     broadcast_tx: tokio::sync::broadcast::Sender<storage::HistoryId>,
@@ -297,6 +296,20 @@ async fn proxy(
 
         loop {
             tokio::select! {
+                msg = command_rx.recv() => {
+                    match msg {
+                        Some(ProxyCommand::Subscribe(reply_tx)) => {
+                            let _ = reply_tx.send(broadcast_tx.subscribe());
+                        }
+                        None => {
+                            tracing::debug!("exiting due to command channel receive failure");
+                            return Err(Error::Channel);
+                        }
+                    }
+
+                    // Restart the inner loop. This will continue awaiting the same call to
+                    // `interceptor.intercept()` so we don't miss a message.
+                }
                 message = &mut intercept => {
                     let message = message?;
                     let response = if message.response.is_empty() {
@@ -322,20 +335,6 @@ async fn proxy(
                     // Exit the inner loop and restart the outer loop. This will create a fresh
                     // call to `interceptor.intercept()`
                     break;
-                }
-                msg = command_rx.recv() => {
-                    match msg {
-                        Some(ProxyCommand::Subscribe(reply_tx)) => {
-                            let _ = reply_tx.send(broadcast_tx.subscribe());
-                        }
-                        None => {
-                            tracing::debug!("exiting due to command channel receive failure");
-                            return Err(Error::Channel);
-                        }
-                    }
-
-                    // Restart the inner loop. This will continue awaiting the same call to
-                    // `interceptor.intercept()` so we don't miss a message.
                 }
                 _ = shutdown_notification_rx.changed() => {
                     tracing::trace!("shutting down");
@@ -485,7 +484,7 @@ impl RpcSpawner {
     }
 }
 
-async fn rpc(
+async fn rpc_task(
     listener: tokio::net::TcpListener,
     limiter: Arc<tokio::sync::Semaphore>,
     spawner: RpcSpawner,
