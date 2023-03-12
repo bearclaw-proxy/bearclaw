@@ -86,24 +86,16 @@ async fn main() -> Result<()> {
     // subscriptions will be created from the tx side
     drop(interceptor_rx);
 
-    tokio::task::Builder::new()
-        .name("proxy-inteceptor")
-        .spawn(proxy(
-            interceptor,
-            interceptor_tx.clone(),
-            storage_channel.clone(),
-            shutdown_notification_rx.clone(),
-            death_notification_tx.clone(),
-        ))?;
-
     let (proxy_command_tx, proxy_command_rx) =
         tokio::sync::mpsc::channel(PROXY_COMMAND_CHANNEL_CAPACITY);
 
     tokio::task::Builder::new()
-        .name("proxy-command")
-        .spawn(proxy_command(
-            interceptor_tx,
+        .name("proxy-inteceptor")
+        .spawn(proxy(
+            interceptor,
             proxy_command_rx,
+            interceptor_tx.clone(),
+            storage_channel.clone(),
             shutdown_notification_rx.clone(),
             death_notification_tx.clone(),
         ))?;
@@ -293,65 +285,62 @@ struct Args {
 
 async fn proxy(
     mut interceptor: bootstrap_proxy::Interceptor,
+    mut command_rx: tokio::sync::mpsc::Receiver<ProxyCommand>,
     broadcast_tx: tokio::sync::broadcast::Sender<storage::HistoryId>,
     storage_channel: storage::Channel,
     mut shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
     _death_notification_tx: tokio::sync::mpsc::Sender<()>,
 ) -> Result<()> {
     loop {
-        tokio::select! {
-            message = interceptor.intercept() => {
-                let message = message?;
-                let response = if message.response.is_empty() {
-                    Err(storage::HttpError::CouldNotConnect)
-                } else {
-                    Ok(message.response)
-                };
-                let id = storage_channel.store_http_history(
-                    None,
-                    storage::HttpMessage {
-                        request_time: message.received_at,
-                        response_time: message.received_at,
-                        host: message.host,
-                        port: message.port,
-                        is_https: message.is_https,
-                        request: message.request,
-                        response,
-                    },
-                ).await?;
-                // It's OK for this to return an error if there are no subscribers
-                let _ = broadcast_tx.send(id);
-            }
-            _ = shutdown_notification_rx.changed() => {
-                tracing::trace!("shutting down");
-                return Ok(());
-            }
-        }
-    }
-}
+        let intercept = interceptor.intercept();
+        tokio::pin!(intercept);
 
-async fn proxy_command(
-    broadcast_tx: tokio::sync::broadcast::Sender<storage::HistoryId>,
-    mut command_rx: tokio::sync::mpsc::Receiver<ProxyCommand>,
-    mut shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
-    _death_notification_tx: tokio::sync::mpsc::Sender<()>,
-) {
-    loop {
-        tokio::select! {
-            msg = command_rx.recv() => {
-                match msg {
-                    Some(ProxyCommand::Subscribe(reply_tx)) => {
-                        let _ = reply_tx.send(broadcast_tx.subscribe());
-                    }
-                    None => {
-                        tracing::debug!("exiting due to command channel receive failure");
-                        return;
-                    }
+        loop {
+            tokio::select! {
+                message = &mut intercept => {
+                    let message = message?;
+                    let response = if message.response.is_empty() {
+                        Err(storage::HttpError::CouldNotConnect)
+                    } else {
+                        Ok(message.response)
+                    };
+                    let id = storage_channel.store_http_history(
+                        None,
+                        storage::HttpMessage {
+                            request_time: message.received_at,
+                            response_time: message.received_at,
+                            host: message.host,
+                            port: message.port,
+                            is_https: message.is_https,
+                            request: message.request,
+                            response,
+                        },
+                    ).await?;
+                    // It's OK for this to return an error if there are no subscribers
+                    let _ = broadcast_tx.send(id);
+
+                    // Exit the inner loop and restart the outer loop. This will create a fresh
+                    // call to `interceptor.intercept()`
+                    break;
                 }
-            }
-            _ = shutdown_notification_rx.changed() => {
-                tracing::trace!("shutting down");
-                return;
+                msg = command_rx.recv() => {
+                    match msg {
+                        Some(ProxyCommand::Subscribe(reply_tx)) => {
+                            let _ = reply_tx.send(broadcast_tx.subscribe());
+                        }
+                        None => {
+                            tracing::debug!("exiting due to command channel receive failure");
+                            return Err(Error::Channel);
+                        }
+                    }
+
+                    // Restart the inner loop. This will continue awaiting the same call to
+                    // `interceptor.intercept()` so we don't miss a message.
+                }
+                _ = shutdown_notification_rx.changed() => {
+                    tracing::trace!("shutting down");
+                    return Ok(());
+                }
             }
         }
     }
