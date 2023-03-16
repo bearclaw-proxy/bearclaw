@@ -74,12 +74,37 @@ impl Database {
                         .send(HistoryId(history_id))
                         .map_err(|_| RunError::Channel)?;
                 }
-                Command::GetHttpHistory {
-                    http_history_id,
+                Command::GetHttpHistory { history_id, reply } => {
+                    let http_message = self.get_http_history(history_id)?;
+                    reply.send(http_message).map_err(|_| RunError::Channel)?;
+                }
+                Command::CreateHistorySearch { reply } => {
+                    let result = self.create_history_search()?;
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::GetHistorySearchItems {
+                    history_search_id,
+                    start_index,
+                    count,
                     reply,
                 } => {
-                    let http_message = self.get_http_history(http_history_id)?;
-                    reply.send(http_message).map_err(|_| RunError::Channel)?;
+                    let result =
+                        self.get_history_search_items(history_search_id, start_index, count)?;
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::GetHistorySearchCount {
+                    history_search_id,
+                    reply,
+                } => {
+                    let result = self.get_history_search_count(history_search_id)?;
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::DeleteHistorySearch {
+                    history_search_id,
+                    reply,
+                } => {
+                    let result = self.delete_history_search(history_search_id)?;
+                    reply.send(result).map_err(|_| RunError::Channel)?;
                 }
             }
         }
@@ -262,7 +287,10 @@ impl Database {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn get_http_history(&mut self, http_history_id: HistoryId) -> RunResult<HttpMessage> {
+    fn get_http_history(
+        &mut self,
+        http_history_id: HistoryId,
+    ) -> RunResult<LookupResult<HttpMessage>> {
         let txn = self.db.transaction()?;
         let (
             host,
@@ -320,23 +348,30 @@ impl Database {
                     http_history.http_history_id = ?",
             )?;
 
-            query.query_row((http_history_id.0,), |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                    row.get(6)?,
-                    row.get(7)?,
-                    row.get(8)?,
-                    row.get(9)?,
-                    row.get(10)?,
-                    row.get(11)?,
-                    row.get::<usize, Option<u8>>(12)?,
-                ))
-            })?
+            if let Some(result) = query
+                .query_row((http_history_id.0,), |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                        row.get(11)?,
+                        row.get::<usize, Option<u8>>(12)?,
+                    ))
+                })
+                .optional()?
+            {
+                result
+            } else {
+                return Ok(Err(LookupError::NotFound));
+            }
         };
 
         let request = load_http_request(
@@ -358,7 +393,7 @@ impl Database {
 
         txn.commit()?;
 
-        Ok(HttpMessage {
+        Ok(Ok(HttpMessage {
             request_time: chrono::Local
                 .timestamp_opt(request_date_secs, request_date_nsecs)
                 .unwrap(),
@@ -370,7 +405,64 @@ impl Database {
             is_https,
             request,
             response,
-        })
+        }))
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn create_history_search(&mut self) -> RunResult<HistorySearchId> {
+        Ok(HistorySearchId)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn get_history_search_count(
+        &mut self,
+        _history_search_id: HistorySearchId,
+    ) -> RunResult<LookupResult<u32>> {
+        let txn = self.db.transaction()?;
+        let result = {
+            let mut query = txn.prepare_cached("SELECT COUNT(history_id) FROM history")?;
+
+            query.query_row([], |row| row.get(0))?
+        };
+
+        txn.commit()?;
+
+        Ok(Ok(result))
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn get_history_search_items(
+        &mut self,
+        _history_search_id: HistorySearchId,
+        start_index: u32,
+        count: u32,
+    ) -> RunResult<LookupResult<Vec<HistoryId>>> {
+        let txn = self.db.transaction()?;
+        let result = {
+            let mut result = Vec::with_capacity(count as usize);
+            let mut query = txn.prepare_cached(
+                "SELECT history_id FROM history ORDER BY history_id LIMIT ? OFFSET ?",
+            )?;
+            let query = query.query_map((count, start_index), |row| Ok(HistoryId(row.get(0)?)))?;
+
+            for item in query {
+                result.push(item?)
+            }
+
+            result
+        };
+
+        txn.commit()?;
+
+        Ok(Ok(result))
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn delete_history_search(
+        &mut self,
+        _history_search_id: HistorySearchId,
+    ) -> RunResult<LookupResult<()>> {
+        Ok(Ok(()))
     }
 }
 
@@ -442,13 +534,40 @@ pub(crate) enum Command {
         reply: tokio::sync::oneshot::Sender<HistoryId>,
     },
     GetHttpHistory {
-        http_history_id: HistoryId,
-        reply: tokio::sync::oneshot::Sender<HttpMessage>,
+        history_id: HistoryId,
+        reply: tokio::sync::oneshot::Sender<LookupResult<HttpMessage>>,
+    },
+    CreateHistorySearch {
+        reply: tokio::sync::oneshot::Sender<HistorySearchId>,
+    },
+    GetHistorySearchItems {
+        history_search_id: HistorySearchId,
+        start_index: u32,
+        count: u32,
+        reply: tokio::sync::oneshot::Sender<LookupResult<Vec<HistoryId>>>,
+    },
+    GetHistorySearchCount {
+        history_search_id: HistorySearchId,
+        reply: tokio::sync::oneshot::Sender<LookupResult<u32>>,
+    },
+    DeleteHistorySearch {
+        history_search_id: HistorySearchId,
+        reply: tokio::sync::oneshot::Sender<LookupResult<()>>,
     },
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TestId(i64);
+pub(crate) struct TestId(pub(crate) i64);
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HistoryId(pub(crate) i64);
+
+pub(crate) type LookupResult<T> = std::result::Result<T, LookupError>;
+
+#[derive(Debug)]
+pub(crate) enum LookupError {
+    NotFound,
+}
 
 #[derive(Debug)]
 pub(crate) struct HttpMessage {
@@ -476,7 +595,7 @@ pub(crate) enum HttpError {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct HistoryId(i64);
+pub(crate) struct HistorySearchId;
 
 pub(super) type RunResult<T> = std::result::Result<T, RunError>;
 
@@ -736,12 +855,63 @@ impl Channel {
 
     pub(crate) async fn get_http_history(
         &self,
-        http_history_id: HistoryId,
-    ) -> ChannelResult<HttpMessage> {
+        history_id: HistoryId,
+    ) -> ChannelResult<LookupResult<HttpMessage>> {
         let (reply, reply_rx) = tokio::sync::oneshot::channel();
         self.storage_tx
-            .send(Command::GetHttpHistory {
-                http_history_id,
+            .send(Command::GetHttpHistory { history_id, reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn create_history_search(&self) -> ChannelResult<HistorySearchId> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::CreateHistorySearch { reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn get_history_search_items(
+        &self,
+        history_search_id: HistorySearchId,
+        start_index: u32,
+        count: u32,
+    ) -> ChannelResult<LookupResult<Vec<HistoryId>>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::GetHistorySearchItems {
+                history_search_id,
+                start_index,
+                count,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn get_history_search_count(
+        &self,
+        history_search_id: HistorySearchId,
+    ) -> ChannelResult<LookupResult<u32>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::GetHistorySearchCount {
+                history_search_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn delete_history_search(
+        &self,
+        history_search_id: HistorySearchId,
+    ) -> ChannelResult<LookupResult<()>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::DeleteHistorySearch {
+                history_search_id,
                 reply,
             })
             .await?;

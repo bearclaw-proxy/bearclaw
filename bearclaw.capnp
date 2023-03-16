@@ -15,14 +15,16 @@ interface Bearclaw {
 	# This will be removed in the future in favor of having the client create their own connections
 	# explicitly.
 
-	intercept @1 (subscriber :InterceptedMessageSubscriber) -> (subscription :Subscription);
-	# Receive a callback on `subscriber` when a message is intercepted by the proxy. The message cannot
-	# be edited by the client and includes both the request and the response. The callbacks will
-	# stop when the returned `subscription` is destroyed.
+	searchHistory @1 () -> (result :Result(HistorySearch, SearchHistoryError));
+	# Returns a list of all messages in the proxy history that match your search query (you can't
+	# specify the query yet). You can subscribe to receive notifications when new history items are
+	# created that match your query.
 
-	buildInfo @2 () -> (buildInfo :BuildInfo);
+	getHistoryItem @2 (historyId :HistoryId) -> (result :Result(HttpMessage, GetHistoryItemError));
 
-	exit @3 ();
+	buildInfo @3 () -> (buildInfo :BuildInfo);
+
+	exit @4 ();
 	# Shuts down the bearclaw proxy application
 }
 
@@ -40,22 +42,71 @@ struct Option(T) {
 	}
 }
 
-interface InterceptedMessageSubscriber {
-# A client implements this interface on an object that they want to receive intercepted message
-# callbacks.
-# This should be converted to a generic interface once
-# https://github.com/capnproto/pycapnp/issues/225 is fixed.
-	pushMessage @0 (message: InterceptedMessage) -> ();
+struct Result(T, E) {
+# A value of type T or an error of type E.
+
+	union {
+		ok @0 :T;
+		err @1 :E;
+	}
 }
 
-interface InterceptedMessage {
-	connectionInfo @0 () -> (conn :ConnectionInfo);
-	requestTimestamp @1 () -> (time :Time);
-	requestBytes @2 () -> (request :Data);
-	responseTimestamp @3 () -> (time :Time);
-	responseBytes @4 () -> (response :HttpResponse);
-	# May not contain a response if there was an error forwarding the request. This should be changed
-	# to return a `Result` with the recorded error details.
+interface HistorySearch {
+# Retrieves existing and future proxy history messages that match the search query specified when
+# creating this object. You cannot change the search query on an existing object.
+
+	getCount @0 () -> (count :UInt32);
+	# Returns the number of proxy history items in the search results. This includes items added to
+	# the proxy history after this object was created.
+
+	getItems @1 (startIndex :UInt32, count :UInt32) -> (items :List(HistoryId));
+	# Returns up to `count` items starting at `startIndex` in the search results. This includes items
+	# added to the proxy history after this object was created. May return less than `count` items if
+	# the range is at the end of the search results or if `count` is larger than the maximum allowed
+	# value.
+
+	subscribe @2 (subscriber :HistorySubscriber) -> (result :Result(Subscription, SubscribeError));
+	# Receive a notification on `subscriber` when a new proxy history message becomes available that
+	# matches the search query. You can obtain the new item from `getItems`. Note that it is possible
+	# to receive notifications for items you have already accessed and there may be multiple new items
+	# available by the time you receive a notification.
+}
+
+struct HistoryId {
+	id @0 :Int64;
+}
+
+interface HistorySubscriber {
+# A client implements this interface on an object that they want to receive new item notification
+# callbacks.
+
+	notifyNewItem @0 ();
+}
+
+interface Subscription {}
+# A handle to a subscription for a callback. When this is deleted the subscription will be cancelled
+# and no more callbacks will be received.
+
+struct SubscribeError {
+	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
+}
+
+struct SearchHistoryError {
+	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
+}
+
+enum RpcObjectLimitType {
+	search @0;
+	subscription @1;
+	historyItem @2;
+}
+
+interface HttpMessage {
+	connectionInfo @0 () -> (connectionInfo :ConnectionInfo);
+	requestTimestamp @1 () -> (requestTimestamp :Time);
+	requestBytes @2 () -> (requestBytes :Data);
+	responseTimestamp @3 () -> (responseTimestamp :Time);
+	responseBytes @4 () -> (responseBytes :HttpResponse);
 }
 
 struct Time {
@@ -80,9 +131,10 @@ enum HttpError {
 	responseTooLarge @4;
 }
 
-interface Subscription {}
-# A handle to a subscription for a callback. When this is deleted the subscription will be cancelled
-# and no more callbacks will be received.
+struct GetHistoryItemError {
+	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
+	notFound @1 :Void;
+}
 
 struct BuildInfo {
 	version @0 :Text;

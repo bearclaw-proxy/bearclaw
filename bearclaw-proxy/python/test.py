@@ -1,36 +1,59 @@
 #!/usr/bin/env python3
 
 import capnp
+import sys
 import time
 
 capnp.remove_import_hook()
 bearclaw_capnp = capnp.load('../../bearclaw.capnp')
 
-def printReceivedAt(result, message):
-    print(result)
-    return message.connectionInfo()
+newMessages = False
+nextIndex = 0
 
-def printConnectionInfo(result, message):
-    print(result)
-    return message.requestBytes()
+def unwrap(obj):
+    which = obj.which()
+    if which == 'ok':
+        return obj.ok
+    else:
+        print('Error code returned:')
+        print(obj.err)
+        sys.exit(1)
 
-def printRequest(result, message):
-    print(result)
-    return message.responseBytes()
+def getMessages(historySearch):
+    global nextIndex
+    while True:
+        items = historySearch.getItems(nextIndex, 10).wait().items
 
-def printResponse(result):
-    print(result)
+        for id in items:
+            item = unwrap(bearclaw.getHistoryItem(id).wait().result)
+            nextIndex += 1
+            printHistoryItem(item)
+
+        if len(items) < 10:
+            break
+    
+def printHistoryItem(item):
     print('')
+    print(item.connectionInfo().wait())
+    print(item.requestTimestamp().wait())
+    print(item.requestBytes().wait())
+    print(item.responseTimestamp().wait())
+    printResponse(item.responseBytes().wait().responseBytes)
 
-class InterceptedMessageSubscriberImpl(bearclaw_capnp.InterceptedMessageSubscriber.Server):
-    def pushMessage(self, message, **kwargs):
-        # Sadly we can't use .wait() in callabcks, which makes this code a lot more complicated :(
-        # This function returns a promise, so we have to construct a promise that does all the
-        # network calls we want and return it. Surely there's a better way to do this?!
-        return message.requestTimestamp().then(lambda x: printReceivedAt(x, message)) \
-            .then(lambda x: printConnectionInfo(x, message)) \
-            .then(lambda x: printRequest(x, message)) \
-            .then(lambda x: printResponse(x))
+def printResponse(response):
+    which = response.which()
+
+    if which == 'ok':
+        print("First 1,000 bytes of response:")
+        print(response.ok[0:1000])
+    else:
+        print(response.err)
+
+class HistorySubscriberImpl(bearclaw_capnp.HistorySubscriber.Server):
+    def notifyNewItem(self, **kwargs):
+        global newMessages
+        print('Subscription notification received')
+        newMessages = True
 
 print('Connecting to bearclaw-proxy RPC...')
 
@@ -57,11 +80,28 @@ else:
     print('No response returned')
 
 print('')
-print('Waiting for intercepted messages...')
+print('Creating proxy history search...')
 
-subscriber = InterceptedMessageSubscriberImpl()
-subscription = bearclaw.intercept(subscriber).wait().subscription
+historySearch = unwrap(bearclaw.searchHistory().wait().result);
+
+print('')
+print('Subscribing to proxy history search notifications...')
+
+subscriber = HistorySubscriberImpl()
+subscription = unwrap(historySearch.subscribe(subscriber).wait().result);
+
+print('')
+print('Downloading proxy history...')
+print(historySearch.getCount().wait())
+
+getMessages(historySearch)
+
+print('')
+print('Waiting for new proxy history items...')
 
 while True:
     capnp.poll_once()
-    time.sleep(0.001)
+    time.sleep(0.25)
+    if newMessages:
+        newMessages = False
+        getMessages(historySearch)

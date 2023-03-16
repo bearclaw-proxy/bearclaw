@@ -47,6 +47,7 @@ async fn main() -> Result<()> {
     std::panic::set_hook(Box::new(move |info| {
         tracing::error!("Panic: {:?}", info);
         default_panic(info);
+        std::process::exit(1);
     }));
 
     console_subscriber::init();
@@ -93,7 +94,7 @@ async fn main() -> Result<()> {
         .spawn(proxy_task(
             interceptor,
             proxy_command_rx,
-            interceptor_tx.clone(),
+            interceptor_tx,
             storage_channel.clone(),
             shutdown_notification_rx.clone(),
             death_notification_tx.clone(),

@@ -5,16 +5,21 @@ use capnp_rpc::pry;
 
 use crate::bearclaw_capnp;
 
-/// Maximum number of subscriptions (callbacks) to RPC connections that are allowed. Exceeding this
-/// limit will create a capnproto error and cause the RPC connection to be closed.
+/// Maximum number of searches each RPC connections may create.
 /// TODO: Value chosen arbitrarily. This should be configurable by the end user.
-const MAX_SUBSCRIPTIONS_PER_RPC_CONNECTION: usize = 128;
+const MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION: usize = 128;
 
-/// Maximum number of message objects each RPC connections may create. Exceeding this
-/// limit will either create a capnproto error and cause the RPC connection to be closed
-/// or cause a subscription to be silently deleted.
+/// Maximum number of subscriptions (callbacks) to RPC connections that are allowed.
 /// TODO: Value chosen arbitrarily. This should be configurable by the end user.
-const MAX_MESSAGE_OBJECTS_PER_RPC_CONNECTION: usize = 128;
+const MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION: usize = 128;
+
+/// Maximum number of message objects each RPC connections may create.
+/// TODO: Value chosen arbitrarily. This should be configurable by the end user.
+const MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION: usize = 128;
+
+/// Maximum number of search results that can be returned from a single invocation.
+/// TODO: Value chosen arbitrarily. This should be configurable by the end user.
+const MAX_SEARCH_RESULTS_RETURNED_PER_CALL: u32 = 128;
 
 pub(super) struct BearclawImpl {
     bootstrap_proxy_endpoint: Arc<String>,
@@ -24,9 +29,10 @@ pub(super) struct BearclawImpl {
     death_notification_tx: tokio::sync::mpsc::Sender<()>,
     thread_id: usize,
     client_id: usize,
+    num_active_searches: Rc<Cell<usize>>,
     num_active_subscriptions: Rc<Cell<usize>>,
-    num_total_subscriptions: usize,
-    num_active_messages: Rc<Cell<usize>>,
+    num_total_subscriptions: Rc<Cell<usize>>,
+    num_active_history_items: Rc<Cell<usize>>,
 }
 
 impl BearclawImpl {
@@ -47,9 +53,10 @@ impl BearclawImpl {
             death_notification_tx,
             thread_id,
             client_id,
+            num_active_searches: Default::default(),
             num_active_subscriptions: Default::default(),
             num_total_subscriptions: Default::default(),
-            num_active_messages: Default::default(),
+            num_active_history_items: Default::default(),
         }
     }
 }
@@ -76,19 +83,13 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
             let mut forwarder =
                 crate::bootstrap_proxy::Forwarder::connect(&bootstrap_proxy_endpoint)
                     .await
-                    .map_err(|e| {
-                        tracing::error!("Bootstrap proxy connection failed: {:?}", e);
-                        capnp::Error::failed("Failed to forward request to proxy".to_owned())
-                    })?;
+                    .unwrap();
 
             tracing::trace!("Forwarding request to bootstrap proxy");
             let response = forwarder
                 .forward(host, port, is_https, request)
                 .await
-                .map_err(|e| {
-                    tracing::error!("Bootstrap proxy forwarding failed: {:?}", e);
-                    capnp::Error::failed("Failed to forward request to proxy".to_owned())
-                })?;
+                .unwrap();
 
             match response {
                 Some(response) => results.get().init_response().set_some(&response)?,
@@ -100,67 +101,105 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn intercept(
+    fn search_history(
         &mut self,
-        params: bearclaw_capnp::bearclaw::InterceptParams,
-        mut results: bearclaw_capnp::bearclaw::InterceptResults,
-    ) -> Promise<(), capnp::Error> {
-        if self.num_active_subscriptions.get() >= MAX_SUBSCRIPTIONS_PER_RPC_CONNECTION {
+        _params: bearclaw_capnp::bearclaw::SearchHistoryParams,
+        mut results: bearclaw_capnp::bearclaw::SearchHistoryResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        if self.num_active_searches.get() >= MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION {
             tracing::warn!(
-                "Max subscriptions ({}) exceeded for RPC connection resulting in RPC exception",
-                MAX_SUBSCRIPTIONS_PER_RPC_CONNECTION
+                "Max search objects ({}) exceeded for RPC connection",
+                MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION
             );
-            return Promise::err(capnp::Error::overloaded(format!(
-                "Maximum number of subscriptions for this connection ({}) exceeded",
-                MAX_SUBSCRIPTIONS_PER_RPC_CONNECTION
-            )));
+
+            results
+                .get()
+                .init_result()
+                .init_err()
+                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::Search);
+
+            return Promise::ok(());
         }
 
-        self.num_active_subscriptions
-            .set(self.num_active_subscriptions.get() + 1);
-        self.num_total_subscriptions += 1;
+        self.num_active_searches
+            .set(self.num_active_searches.get() + 1);
 
-        tracing::trace!(num_active_subscriptions = self.num_active_subscriptions.get());
+        tracing::trace!(num_active_searches = self.num_active_searches.get());
 
-        let proxy_command_tx = self.proxy_command_tx.clone();
-        let subscriber = pry!(pry!(params.get()).get_subscriber());
         let storage = self.storage.clone();
+        let proxy_command_tx = self.proxy_command_tx.clone();
+        let num_active_searches = self.num_active_searches.clone();
         let num_active_subscriptions = self.num_active_subscriptions.clone();
-        let num_active_messages = self.num_active_messages.clone();
+        let num_total_subscriptions = self.num_total_subscriptions.clone();
         let thread_id = self.thread_id;
         let client_id = self.client_id;
-        let subscription_id = self.num_total_subscriptions;
         let death_notification_tx = self.death_notification_tx.clone();
 
         Promise::from_future(async move {
-            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-            proxy_command_tx
-                .send(crate::ProxyCommand::Subscribe(reply_tx))
-                .await
-                .map_err(|e| {
-                    tracing::error!("Send to proxy control channel failed: {:?}", e);
-                    capnp::Error::failed("Unable to talk to proxy control channel".to_owned())
-                })?;
-            let interceptor_rx = reply_rx.await.map_err(|e| {
-                tracing::error!("Receiving reply from proxy control channel failed: {:?}", e);
-                capnp::Error::failed(
-                    "Unable to receive reply from proxy control channel".to_owned(),
-                )
-            })?;
-            let subscription = SubscriptionImpl::new(
-                interceptor_rx,
-                subscriber,
+            let history_search_id = storage.create_history_search().await.unwrap();
+
+            let history_search = capnp_rpc::new_client(HistorySearchImpl {
+                history_search_id,
                 storage,
+                proxy_command_tx,
+                num_active_searches,
                 num_active_subscriptions,
-                num_active_messages,
+                num_total_subscriptions,
                 thread_id,
                 client_id,
-                subscription_id,
                 death_notification_tx,
+            });
+            results.get().init_result().set_ok(history_search)?;
+
+            Ok(())
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn get_history_item(
+        &mut self,
+        params: bearclaw_capnp::bearclaw::GetHistoryItemParams,
+        mut results: bearclaw_capnp::bearclaw::GetHistoryItemResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        if self.num_active_history_items.get() >= MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION {
+            tracing::warn!(
+                "Max history item objects ({}) exceeded for RPC connection",
+                MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION
             );
+
             results
                 .get()
-                .set_subscription(capnp_rpc::new_client(subscription));
+                .init_result()
+                .init_err()
+                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::HistoryItem);
+
+            return Promise::ok(());
+        }
+
+        self.num_active_history_items
+            .set(self.num_active_history_items.get() + 1);
+
+        tracing::trace!(num_active_history_items = self.num_active_history_items.get());
+
+        let history_id =
+            crate::storage::HistoryId(pry!(pry!(params.get()).get_history_id()).get_id());
+        let storage = self.storage.clone();
+        let num_active_history_items = self.num_active_history_items.clone();
+
+        Promise::from_future(async move {
+            let msg = storage.get_http_history(history_id).await.unwrap();
+
+            match msg {
+                Ok(msg) => {
+                    let msg =
+                        capnp_rpc::new_client(HttpMessageImpl::new(msg, num_active_history_items));
+                    results.get().init_result().set_ok(msg)?;
+                }
+                Err(crate::storage::LookupError::NotFound) => {
+                    results.get().init_result().init_err().set_not_found(());
+                }
+            }
+
             Ok(())
         })
     }
@@ -224,12 +263,166 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         let shutdown_command_tx = self.shutdown_command_tx.clone();
 
         Promise::from_future(async move {
-            shutdown_command_tx.send(()).await.map_err(|e| {
-                tracing::error!("Send to shutdown command channel failed: {:?}", e);
-                capnp::Error::failed("Unable to talk to shutdown command channel".to_owned())
-            })?;
+            shutdown_command_tx.send(()).await.unwrap();
             Ok(())
         })
+    }
+}
+
+struct HistorySearchImpl {
+    history_search_id: crate::storage::HistorySearchId,
+    storage: crate::storage::Channel,
+    proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
+    num_active_searches: Rc<Cell<usize>>,
+    num_active_subscriptions: Rc<Cell<usize>>,
+    num_total_subscriptions: Rc<Cell<usize>>,
+    thread_id: usize,
+    client_id: usize,
+    death_notification_tx: tokio::sync::mpsc::Sender<()>,
+}
+
+impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn get_count(
+        &mut self,
+        _: bearclaw_capnp::history_search::GetCountParams,
+        mut results: bearclaw_capnp::history_search::GetCountResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let history_search_id = self.history_search_id;
+        let storage = self.storage.clone();
+
+        Promise::from_future(async move {
+            let count = storage
+                .get_history_search_count(history_search_id)
+                .await
+                .unwrap()
+                .unwrap();
+
+            results.get().set_count(count);
+
+            Ok(())
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn get_items(
+        &mut self,
+        params: bearclaw_capnp::history_search::GetItemsParams,
+        mut results: bearclaw_capnp::history_search::GetItemsResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let history_search_id = self.history_search_id;
+        let start_index = pry!(params.get()).get_start_index();
+        let count = pry!(params.get())
+            .get_count()
+            .clamp(0, MAX_SEARCH_RESULTS_RETURNED_PER_CALL);
+        let storage = self.storage.clone();
+
+        Promise::from_future(async move {
+            let items = storage
+                .get_history_search_items(history_search_id, start_index, count)
+                .await
+                .unwrap()
+                .unwrap();
+
+            let out_items = results.get().init_items(items.len() as u32);
+            // is there a better way to do this?
+            let mut builder =
+                capnp_rpc::ImbuedMessageBuilder::new(capnp::message::HeapAllocator::new());
+
+            for (i, item) in items.iter().enumerate() {
+                let mut out_item = builder.get_root::<bearclaw_capnp::history_id::Builder>()?;
+                out_item.set_id(item.0);
+                out_items.set_with_caveats(i as u32, out_item.into_reader())?;
+            }
+
+            Ok(())
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn subscribe(
+        &mut self,
+        params: bearclaw_capnp::history_search::SubscribeParams,
+        mut results: bearclaw_capnp::history_search::SubscribeResults,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        if self.num_active_subscriptions.get() >= MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION {
+            tracing::warn!(
+                "Max subscriptions ({}) exceeded for RPC connection resulting in RPC exception",
+                MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION
+            );
+
+            results
+                .get()
+                .init_result()
+                .init_err()
+                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::Subscription);
+
+            return Promise::ok(());
+        }
+
+        self.num_active_subscriptions
+            .set(self.num_active_subscriptions.get() + 1);
+        self.num_total_subscriptions
+            .set(self.num_total_subscriptions.get() + 1);
+
+        tracing::trace!(num_active_subscriptions = self.num_active_subscriptions.get());
+
+        let proxy_command_tx = self.proxy_command_tx.clone();
+        let subscriber = pry!(pry!(params.get()).get_subscriber());
+        let num_active_subscriptions = self.num_active_subscriptions.clone();
+        let thread_id = self.thread_id;
+        let client_id = self.client_id;
+        let subscription_id = self.num_total_subscriptions.get();
+        let death_notification_tx = self.death_notification_tx.clone();
+
+        Promise::from_future(async move {
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            proxy_command_tx
+                .send(crate::ProxyCommand::Subscribe(reply_tx))
+                .await
+                .unwrap();
+            let interceptor_rx = reply_rx.await.unwrap();
+            let subscription = SubscriptionImpl::new(
+                interceptor_rx,
+                subscriber,
+                num_active_subscriptions,
+                thread_id,
+                client_id,
+                subscription_id,
+                death_notification_tx,
+            );
+            results
+                .get()
+                .init_result()
+                .set_ok(capnp_rpc::new_client(subscription))?;
+            Ok(())
+        })
+    }
+}
+
+impl Drop for HistorySearchImpl {
+    fn drop(&mut self) {
+        self.num_active_searches
+            .set(self.num_active_searches.get() - 1);
+        tracing::trace!(num_active_searches = self.num_active_searches.get());
+        tracing::trace!("search dropped by client");
+
+        let tid = self.thread_id;
+        let cid = self.client_id;
+        let storage = self.storage.clone();
+        let history_search_id = self.history_search_id;
+
+        tokio::task::Builder::new()
+            .name(&format!("rpc-tid{tid}-cid{cid}-history-search-destructor"))
+            .spawn_local(async move {
+                tracing::trace!("deleting dropped history search");
+                storage
+                    .delete_history_search(history_search_id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            })
+            .unwrap();
     }
 }
 
@@ -242,15 +435,14 @@ struct SubscriptionImpl {
 impl SubscriptionImpl {
     fn new(
         mut interceptor_rx: tokio::sync::broadcast::Receiver<crate::storage::HistoryId>,
-        subscriber: bearclaw_capnp::intercepted_message_subscriber::Client,
-        storage: crate::storage::Channel,
+        subscriber: bearclaw_capnp::history_subscriber::Client,
         num_active_subscriptions: Rc<Cell<usize>>,
-        num_active_messages: Rc<Cell<usize>>,
         thread_id: usize,
         client_id: usize,
         subscription_id: usize,
         death_notification_tx: tokio::sync::mpsc::Sender<()>,
     ) -> Self {
+        // This will shut down the spawned task if the client drops this object
         let (terminator_tx, mut terminator_rx) = tokio::sync::oneshot::channel();
 
         tokio::task::Builder::new()
@@ -260,25 +452,20 @@ impl SubscriptionImpl {
                 loop {
                     tokio::select!(
                         history_id = interceptor_rx.recv() => {
-                            if let Ok(history_id) = history_id {
-                                if num_active_messages.get() >= MAX_MESSAGE_OBJECTS_PER_RPC_CONNECTION {
-                                    tracing::warn!("Max message objects exceeded for RPC connection resulting in silently dropped subscription");
-                                    return;
-                                }
-                                num_active_messages.set(num_active_messages.get() + 1);
-                                let msg = storage.get_http_history(history_id).await.unwrap();
-                                tracing::trace!(num_active_messages = num_active_messages.get());
-                                tracing::trace!("Performing subscriber callback for intercepted message");
-                                let mut request = subscriber.push_message_request();
-                                request.get().set_message(capnp_rpc::new_client(InterceptedMessageImpl::new(msg, num_active_messages.clone())));
-                                request.send().promise.await.unwrap();
-                            } else {
-                                tracing::trace!("Unable to receive intercepted message");
+                            if let Err(tokio::sync::broadcast::error::RecvError::Closed) = history_id {
+                                tracing::trace!("Proxy channel closed, shutting down");
+                                return;
+                            }
+                            history_id.unwrap();
+                            tracing::trace!("Performing subscriber callback for new proxy history item");
+                            let request = subscriber.notify_new_item_request();
+                            if let Err(e) = request.send().promise.await {
+                                tracing::trace!("Unable to send callback to client: {e:?}");
                                 return;
                             }
                         }
                         _ = &mut terminator_rx => {
-                            tracing::trace!("Terminated");
+                            tracing::trace!("Containing object dropped by client");
                             return;
                         }
                     );
@@ -307,28 +494,28 @@ impl Drop for SubscriptionImpl {
 
 impl bearclaw_capnp::subscription::Server for SubscriptionImpl {}
 
-struct InterceptedMessageImpl {
+struct HttpMessageImpl {
     msg: crate::storage::HttpMessage,
-    num_active_messages: Rc<Cell<usize>>,
+    num_active_history_items: Rc<Cell<usize>>,
 }
 
-impl InterceptedMessageImpl {
-    fn new(msg: crate::storage::HttpMessage, num_active_messages: Rc<Cell<usize>>) -> Self {
+impl HttpMessageImpl {
+    fn new(msg: crate::storage::HttpMessage, num_active_history_items: Rc<Cell<usize>>) -> Self {
         Self {
             msg,
-            num_active_messages,
+            num_active_history_items,
         }
     }
 }
 
-impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
+impl bearclaw_capnp::http_message::Server for HttpMessageImpl {
     #[tracing::instrument(level = "trace", skip_all)]
     fn connection_info(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::ConnectionInfoParams,
-        mut results: bearclaw_capnp::intercepted_message::ConnectionInfoResults,
+        _: bearclaw_capnp::http_message::ConnectionInfoParams,
+        mut results: bearclaw_capnp::http_message::ConnectionInfoResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let mut conn = results.get().init_conn();
+        let mut conn = results.get().init_connection_info();
         conn.set_host(&self.msg.host);
         conn.set_port(self.msg.port);
         conn.set_is_https(self.msg.is_https);
@@ -338,10 +525,10 @@ impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
     #[tracing::instrument(level = "trace", skip_all)]
     fn request_timestamp(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::RequestTimestampParams,
-        mut results: bearclaw_capnp::intercepted_message::RequestTimestampResults,
+        _: bearclaw_capnp::http_message::RequestTimestampParams,
+        mut results: bearclaw_capnp::http_message::RequestTimestampResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let mut time = results.get().init_time();
+        let mut time = results.get().init_request_timestamp();
         time.set_secs(self.msg.request_time.timestamp());
         time.set_nsecs(self.msg.request_time.timestamp_subsec_nanos());
         Promise::ok(())
@@ -350,20 +537,20 @@ impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
     #[tracing::instrument(level = "trace", skip_all)]
     fn request_bytes(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::RequestBytesParams,
-        mut results: bearclaw_capnp::intercepted_message::RequestBytesResults,
+        _: bearclaw_capnp::http_message::RequestBytesParams,
+        mut results: bearclaw_capnp::http_message::RequestBytesResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        results.get().set_request(&self.msg.request);
+        results.get().set_request_bytes(&self.msg.request);
         Promise::ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     fn response_timestamp(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::ResponseTimestampParams,
-        mut results: bearclaw_capnp::intercepted_message::ResponseTimestampResults,
+        _: bearclaw_capnp::http_message::ResponseTimestampParams,
+        mut results: bearclaw_capnp::http_message::ResponseTimestampResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let mut time = results.get().init_time();
+        let mut time = results.get().init_response_timestamp();
         time.set_secs(self.msg.response_time.timestamp());
         time.set_nsecs(self.msg.response_time.timestamp_subsec_nanos());
         Promise::ok(())
@@ -372,10 +559,10 @@ impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
     #[tracing::instrument(level = "trace", skip_all)]
     fn response_bytes(
         &mut self,
-        _: bearclaw_capnp::intercepted_message::ResponseBytesParams,
-        mut results: bearclaw_capnp::intercepted_message::ResponseBytesResults,
+        _: bearclaw_capnp::http_message::ResponseBytesParams,
+        mut results: bearclaw_capnp::http_message::ResponseBytesResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let mut response = results.get().init_response();
+        let mut response = results.get().init_response_bytes();
         match &self.msg.response {
             Ok(m) => response.set_ok(m),
             Err(err) => match err {
@@ -398,10 +585,11 @@ impl bearclaw_capnp::intercepted_message::Server for InterceptedMessageImpl {
     }
 }
 
-impl Drop for InterceptedMessageImpl {
+impl Drop for HttpMessageImpl {
     fn drop(&mut self) {
-        self.num_active_messages
-            .set(self.num_active_messages.get() - 1);
-        tracing::trace!(num_active_messages = self.num_active_messages.get());
+        self.num_active_history_items
+            .set(self.num_active_history_items.get() - 1);
+        tracing::trace!(num_active_history_items = self.num_active_history_items.get());
+        tracing::trace!("HttpMessage dropped by client");
     }
 }
