@@ -265,6 +265,7 @@ fn trace_version() {
         env!("VERGEN_CARGO_TARGET_TRIPLE"),
     );
     tracing::info!("Using sqlite version {}", rusqlite::version());
+    tracing::info!("Using zstd {}", zstd::zstd_safe::version_string());
 }
 
 #[derive(Parser, Debug)]

@@ -153,4 +153,5 @@ struct BuildInfo {
 	cargoProfile @13 :Text;
 	cargoTargetTriple @14 :Text;
 	dbEngineVersion @15 :Text;
+	compressionEngineVersion @16 :Text;
 }

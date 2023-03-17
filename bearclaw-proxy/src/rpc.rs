@@ -250,6 +250,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         info.set_cargo_profile(env!("VERGEN_CARGO_PROFILE"));
         info.set_cargo_target_triple(env!("VERGEN_CARGO_TARGET_TRIPLE"));
         info.set_db_engine_version(&format!("sqlite {}", rusqlite::version()));
+        info.set_compression_engine_version(&format!("zstd {}", zstd::zstd_safe::version_string()));
 
         Promise::ok(())
     }
