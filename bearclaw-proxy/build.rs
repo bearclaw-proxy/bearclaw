@@ -1,4 +1,13 @@
 fn main() {
+    println!(
+        "cargo:rerun-if-changed={}",
+        std::env::current_dir()
+            .unwrap()
+            .join("sql")
+            .join("create.sql")
+            .display()
+    );
+
     // If the input capnp file is not in the current directory then the output file will not be
     // created directly in $OUT_DIR, but rather in some subdirectory. Let's avoid that.
     std::env::set_current_dir(std::env::current_dir().unwrap().parent().unwrap()).unwrap();
