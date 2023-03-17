@@ -20,5 +20,6 @@ fn main() {
 
     let mut config = vergen::Config::default();
     *config.git_mut().semver_dirty_mut() = Some("-dirty");
+    *config.git_mut().skip_if_error_mut() = true;
     vergen::vergen(config).unwrap();
 }

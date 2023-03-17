@@ -205,10 +205,10 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn build_info(
+    fn get_build_info(
         &mut self,
-        _: bearclaw_capnp::bearclaw::BuildInfoParams,
-        mut results: bearclaw_capnp::bearclaw::BuildInfoResults,
+        _: bearclaw_capnp::bearclaw::GetBuildInfoParams,
+        mut results: bearclaw_capnp::bearclaw::GetBuildInfoResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
         let dirty_build = git_version::git_version!().contains("-modified");
         let mut info = results.get().init_build_info();
@@ -221,36 +221,44 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         info.set_is_dirty(dirty_build);
         info.set_build_timestamp(env!("VERGEN_BUILD_TIMESTAMP"));
 
-        match option_env!("VERGEN_GIT_BRANCH") {
-            Some(x) => pry!(info.reborrow().init_git_branch().set_some(x)),
-            None => info.reborrow().init_git_branch().set_none(()),
+        if option_env!("VERGEN_GIT_BRANCH").is_some() {
+            let mut info = info.reborrow().init_git_info().init_some();
+
+            info.set_branch(env!("VERGEN_GIT_BRANCH"));
+            info.set_commit_count(env!("VERGEN_GIT_COMMIT_COUNT"));
+            info.set_commit_timestamp(env!("VERGEN_GIT_COMMIT_TIMESTAMP"));
+            info.set_sha(env!("VERGEN_GIT_SHA"));
+        } else {
+            info.reborrow().init_git_info().set_none(());
         }
 
-        match option_env!("VERGEN_GIT_COMMIT_COUNT") {
-            Some(x) => pry!(info.reborrow().init_git_commit_count().set_some(x)),
-            None => info.reborrow().init_git_commit_count().set_none(()),
+        {
+            let mut info = info.reborrow().init_rust_compiler_info();
+
+            info.set_channel(env!("VERGEN_RUSTC_CHANNEL"));
+            info.set_commit_date(env!("VERGEN_RUSTC_COMMIT_DATE"));
+            info.set_commit_hash(env!("VERGEN_RUSTC_COMMIT_HASH"));
+            info.set_host_triple(env!("VERGEN_RUSTC_HOST_TRIPLE"));
+            info.set_semver(env!("VERGEN_RUSTC_SEMVER"));
         }
 
-        match option_env!("VERGEN_GIT_COMMIT_TIMESTAMP") {
-            Some(x) => pry!(info.reborrow().init_git_commit_timestamp().set_some(x)),
-            None => info.reborrow().init_git_commit_timestamp().set_none(()),
+        {
+            let mut info = info.reborrow().init_cargo_info();
+
+            info.set_features(env!("VERGEN_CARGO_FEATURES"));
+            info.set_profile(env!("VERGEN_CARGO_PROFILE"));
+            info.set_target_triple(env!("VERGEN_CARGO_TARGET_TRIPLE"));
         }
 
-        match option_env!("VERGEN_GIT_SHA") {
-            Some(x) => pry!(info.reborrow().init_git_sha().set_some(x)),
-            None => info.reborrow().init_git_sha().set_none(()),
-        }
+        {
+            let mut info = info.reborrow().init_library_info();
 
-        info.set_rustc_channel(env!("VERGEN_RUSTC_CHANNEL"));
-        info.set_rustc_commit_date(env!("VERGEN_RUSTC_COMMIT_DATE"));
-        info.set_rustc_commit_hash(env!("VERGEN_RUSTC_COMMIT_HASH"));
-        info.set_rustc_host_triple(env!("VERGEN_RUSTC_HOST_TRIPLE"));
-        info.set_rustc_semver(env!("VERGEN_RUSTC_SEMVER"));
-        info.set_cargo_features(env!("VERGEN_CARGO_FEATURES"));
-        info.set_cargo_profile(env!("VERGEN_CARGO_PROFILE"));
-        info.set_cargo_target_triple(env!("VERGEN_CARGO_TARGET_TRIPLE"));
-        info.set_db_engine_version(&format!("sqlite {}", rusqlite::version()));
-        info.set_compression_engine_version(&format!("zstd {}", zstd::zstd_safe::version_string()));
+            info.set_db_engine_version(&format!("sqlite {}", rusqlite::version()));
+            info.set_compression_engine_version(&format!(
+                "zstd {}",
+                zstd::zstd_safe::version_string()
+            ));
+        }
 
         Promise::ok(())
     }

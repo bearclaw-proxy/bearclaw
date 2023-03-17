@@ -61,7 +61,7 @@ client = capnp.TwoPartyClient('localhost:3092')
 bearclaw = client.bootstrap().cast_as(bearclaw_capnp.Bearclaw)
 
 print('Requesting build info...')
-print(bearclaw.buildInfo().wait().buildInfo)
+print(bearclaw.getBuildInfo().wait().buildInfo)
 
 print('Sending HTTP request and waiting for response...')
 

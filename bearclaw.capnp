@@ -22,7 +22,7 @@ interface Bearclaw {
 
 	getHistoryItem @2 (historyId :HistoryId) -> (result :Result(HttpMessage, GetHistoryItemError));
 
-	buildInfo @3 () -> (buildInfo :BuildInfo);
+	getBuildInfo @3 () -> (buildInfo :BuildInfo);
 
 	exit @4 ();
 	# Shuts down the bearclaw proxy application
@@ -140,18 +140,34 @@ struct BuildInfo {
 	version @0 :Text;
 	isDirty @1 :Bool;
 	buildTimestamp @2 :Text;
-	gitBranch @3 :Option(Text);
-	gitCommitCount @4 :Option(Text);
-	gitCommitTimestamp @5 :Option(Text);
-	gitSha @6 :Option(Text);
-	rustcChannel @7 :Text;
-	rustcCommitDate @8 :Text;
-	rustcCommitHash @9 :Text;
-	rustcHostTriple @10 :Text;
-	rustcSemver @11 :Text;
-	cargoFeatures @12 :Text;
-	cargoProfile @13 :Text;
-	cargoTargetTriple @14 :Text;
-	dbEngineVersion @15 :Text;
-	compressionEngineVersion @16 :Text;
+	gitInfo @3 :Option(GitInfo);
+	rustCompilerInfo @4 :RustCompilerInfo;
+	cargoInfo @5 :CargoInfo;
+	libraryInfo @6 :LibraryInfo;
+}
+
+struct GitInfo {
+	branch @0 :Text;
+	commitCount @1 :Text;
+	commitTimestamp @2 :Text;
+	sha @3 :Text;
+}
+
+struct RustCompilerInfo {
+	channel @0 :Text;
+	commitDate @1 :Text;
+	commitHash @2 :Text;
+	hostTriple @3 :Text;
+	semver @4 :Text;
+}
+
+struct CargoInfo {
+	features @0 :Text;
+	profile @1 :Text;
+	targetTriple @2 :Text;
+}
+
+struct LibraryInfo {
+	dbEngineVersion @0 :Text;
+	compressionEngineVersion @1 :Text;
 }
