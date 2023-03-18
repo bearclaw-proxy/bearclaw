@@ -108,17 +108,14 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
     ) -> capnp::capability::Promise<(), capnp::Error> {
         if self.num_active_searches.get() >= MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION {
             tracing::warn!(
-                "Max search objects ({}) exceeded for RPC connection",
+                "Maximum search objects ({}) exceeded for RPC connection",
                 MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION
             );
 
-            results
-                .get()
-                .init_result()
-                .init_err()
-                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::Search);
-
-            return Promise::ok(());
+            return Promise::err(capnp::Error::failed(format!(
+                "Maximum search objects ({}) exceeded for RPC connection",
+                MAX_SEARCH_OBJECTS_PER_RPC_CONNECTION
+            )));
         }
 
         self.num_active_searches
@@ -149,7 +146,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
                 client_id,
                 death_notification_tx,
             });
-            results.get().init_result().set_ok(history_search)?;
+            results.get().set_history_search(history_search);
 
             Ok(())
         })
@@ -163,17 +160,14 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
     ) -> capnp::capability::Promise<(), capnp::Error> {
         if self.num_active_history_items.get() >= MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION {
             tracing::warn!(
-                "Max history item objects ({}) exceeded for RPC connection",
+                "Maximum history item objects ({}) exceeded for RPC connection",
                 MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION
             );
 
-            results
-                .get()
-                .init_result()
-                .init_err()
-                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::HistoryItem);
-
-            return Promise::ok(());
+            return Promise::err(capnp::Error::failed(format!(
+                "Maximum history item objects ({}) exceeded for RPC connection",
+                MAX_HISTORY_OBJECTS_PER_RPC_CONNECTION
+            )));
         }
 
         self.num_active_history_items
@@ -356,17 +350,14 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
     ) -> capnp::capability::Promise<(), capnp::Error> {
         if self.num_active_subscriptions.get() >= MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION {
             tracing::warn!(
-                "Max subscriptions ({}) exceeded for RPC connection resulting in RPC exception",
+                "Maximum subscription objects ({}) exceeded for RPC connection",
                 MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION
             );
 
-            results
-                .get()
-                .init_result()
-                .init_err()
-                .set_rpc_object_limit_exceeded(bearclaw_capnp::RpcObjectLimitType::Subscription);
-
-            return Promise::ok(());
+            return Promise::err(capnp::Error::failed(format!(
+                "Maximum subscription objects ({}) exceeded for RPC connection",
+                MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION
+            )));
         }
 
         self.num_active_subscriptions
@@ -402,8 +393,7 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
             );
             results
                 .get()
-                .init_result()
-                .set_ok(capnp_rpc::new_client(subscription))?;
+                .set_subscription(capnp_rpc::new_client(subscription));
             Ok(())
         })
     }

@@ -82,13 +82,13 @@ else:
 print('')
 print('Creating proxy history search...')
 
-historySearch = unwrap(bearclaw.searchHistory().wait().result);
+historySearch = bearclaw.searchHistory().wait().historySearch;
 
 print('')
 print('Subscribing to proxy history search notifications...')
 
 subscriber = HistorySubscriberImpl()
-subscription = unwrap(historySearch.subscribe(subscriber).wait().result);
+subscription = historySearch.subscribe(subscriber).wait().subscription;
 
 print('')
 print('Downloading proxy history...')

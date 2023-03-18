@@ -15,7 +15,7 @@ interface Bearclaw {
 	# This will be removed in the future in favor of having the client create their own connections
 	# explicitly.
 
-	searchHistory @1 () -> (result :Result(HistorySearch, SearchHistoryError));
+	searchHistory @1 () -> (historySearch :HistorySearch);
 	# Returns a list of all messages in the proxy history that match your search query (you can't
 	# specify the query yet). You can subscribe to receive notifications when new history items are
 	# created that match your query.
@@ -36,6 +36,7 @@ struct ConnectionInfo {
 
 struct Option(T) {
 # An optional value of type T.
+
 	union {
 		some @0 :T;
 		none @1 :Void;
@@ -65,7 +66,7 @@ interface HistorySearch {
 	# the range is at the end of the search results or if `count` is larger than the maximum allowed
 	# value.
 
-	subscribe @2 (subscriber :HistorySubscriber) -> (result :Result(Subscription, SubscribeError));
+	subscribe @2 (subscriber :HistorySubscriber) -> (subscription :Subscription);
 	# Receive a notification on `subscriber` when a new proxy history message becomes available that
 	# matches the search query. You can obtain the new item from `getItems`. Note that it is possible
 	# to receive notifications for items you have already accessed and there may be multiple new items
@@ -86,20 +87,6 @@ interface HistorySubscriber {
 interface Subscription {}
 # A handle to a subscription for a callback. When this is deleted the subscription will be cancelled
 # and no more callbacks will be received.
-
-struct SubscribeError {
-	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
-}
-
-struct SearchHistoryError {
-	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
-}
-
-enum RpcObjectLimitType {
-	search @0;
-	subscription @1;
-	historyItem @2;
-}
 
 interface HttpMessage {
 	connectionInfo @0 () -> (connectionInfo :ConnectionInfo);
@@ -132,8 +119,7 @@ enum HttpError {
 }
 
 struct GetHistoryItemError {
-	rpcObjectLimitExceeded @0 :RpcObjectLimitType;
-	notFound @1 :Void;
+	notFound @0 :Void;
 }
 
 struct BuildInfo {
