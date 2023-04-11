@@ -10,7 +10,7 @@ async-channel = "1"
 blake3 = "1"
 bytes = "1"
 capnp = { version = "0.16.1" }
-capnp-rpc = { version = "0.16.1" }
+capnp-rpc = { version = "0.16.2" }
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console-subscriber = "0.1"
