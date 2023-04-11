@@ -1,11 +1,12 @@
 # WARNING: This file is undergoing active design and development and will change in breaking,
 #          incompatible ways.
 
-@0x95c0d2ab067d5dd8;
+@0xfd91532fe1094bdd;
 # This signature must be unique to this file
 
 interface Bearclaw {
-	send @0 (connInfo :ConnectionInfo, request :Data) -> (response :Option(Data));
+	send @2 (connInfo :ConnectionInfo, request :Data)
+		-> (response :Option(Data));
 	# Create a new connection to `conn`, send the request, and return the response received.
 	# If unable to connect or no response is received, returns 'Option::none'.
 	# This should be changed to return a `Result` with the recorded error details.
@@ -15,17 +16,32 @@ interface Bearclaw {
 	# This will be removed in the future in favor of having the client create their own connections
 	# explicitly.
 
-	searchHistory @1 () -> (historySearch :HistorySearch);
+	searchHistory @3 ()
+		-> (historySearch :HistorySearch);
 	# Returns a list of all messages in the proxy history that match your search query (you can't
 	# specify the query yet). You can subscribe to receive notifications when new history items are
 	# created that match your query.
 
-	getHistoryItem @2 (historyId :HistoryId) -> (result :Result(HttpMessage, GetHistoryItemError));
+	getHistoryItem @4 (historyId :HistoryId)
+		-> (result :Result(HttpMessage, GetHistoryItemError));
 
-	getBuildInfo @3 () -> (buildInfo :BuildInfo);
+	createScenario @5 (info :NewScenarioInfo)
+		-> (result :Fallible(CreateScenarioError));
 
-	exit @4 ();
+	getScenario @6 (scenarioId :Text)
+		-> (result :Result(Scenario, GetScenarioError));
+
+	listScenarios @7 ()
+		-> (list :List(ScenarioTreeNode));
+
+	subscribeMethodology @8 (subscriber :MethodologySubscriber)
+		-> (subscription :Subscription);
+
+	exit @1 ();
 	# Shuts down the bearclaw proxy application
+
+	getBuildInfo @0 ()
+		-> (buildInfo :BuildInfo);
 }
 
 struct ConnectionInfo {
@@ -120,6 +136,154 @@ enum HttpError {
 
 struct GetHistoryItemError {
 	notFound @0 :Void;
+}
+
+struct ScenarioTreeNode {
+	info @0 :ScenarioInfo;
+	children @1 :List(ScenarioTreeNode);
+}
+
+struct ScenarioInfo {
+	id @0 :Text;
+	description @1 :Text;
+	type @2 :ScenarioType;
+	createdTimestamp @3 :Time;
+	modifiedTimestamp @4 :Time;
+}
+
+enum ScenarioType {
+	container @0;
+	generic @1;
+	location @2;
+	endpoint @3;
+	authorization @4;
+	businessLogic @5;
+}
+
+struct NewScenarioInfo {
+	id @0 :Text;
+	description @1 :Text;
+	type @2 :ScenarioType;
+}
+
+struct CreateScenarioError {
+	union {
+		idAlreadyExists @0 :Void;
+		scenarioLimitExceeded @1 :Void;
+	}
+}
+
+struct GetScenarioError {
+	notFound @0 :Void;
+}
+
+interface MethodologySubscriber {
+	notifyScenarioTreeChanged @0 ();
+	# A scenario was created, updated, moved, or deleted
+}
+
+interface Scenario {
+	getInfo @0 ()
+		-> (result :Result(ScenarioInfo, ScenarioGetInfoError));
+
+	updateInfo @1 (info: UpdateScenarioInfo)
+		-> (result :Fallible(ScenarioUpdateInfoError));
+	# Updates the scenario with `info`. `info` must have been returned by a previous call to
+	# `getInfo`. An error is returned if the scenario has been updated by another script. This is
+	# determined by comparing the modification timestamp in `info` to the modification timestamp of
+	# the scenario.
+
+	subscribeScenario @2 (subscriber :ScenarioSubscriber)
+		-> (subscription :Subscription);
+
+	createChildScenario @3 (info :NewScenarioInfo)
+		-> (result :Fallible(ScenarioCreateChildScenarioError));
+
+	moveBefore @4 (before :Scenario)
+		-> (result :Fallible(ScenarioMoveError));
+
+	moveAfter @5 (after :Scenario)
+		-> (result :Fallible(ScenarioMoveError));
+
+	moveInside @6 (parent :Scenario)
+		-> (result :Fallible(ScenarioMoveError));
+
+	delete @7 ()
+		-> (result :Fallible(ScenarioDeleteError));
+	# Delete the scenario and all of its child scenarios. Scenarios with testing data cannot be
+	# deleted. Instead, you can create a container scenario for unwanted scenarios and move this
+	# scenario inside of it. No scenarios are deleted if an error occurs, even if some child scenarios
+	# could have been successfully deleted.
+}
+
+struct ScenarioGetInfoError {
+	scenarioDeleted @0 :Void;
+}
+
+struct Fallible(E) {
+# A potential error of type E.
+
+	union {
+		success @0 :Void;
+		fail @1 :E;
+	}
+}
+
+struct UpdateScenarioInfo {
+	id @0 :Text;
+	description @1 :Text;
+	previousModifiedTimestamp @2 :Time;
+	# The modified timestamp from the existing scenario info. This is used to detect if another script
+	# has updated the scenario since you last downloaded the scenario info.
+}
+
+struct ScenarioUpdateInfoError {
+	union {
+		scenarioDeleted @0 :Void;
+		scenarioUpdatedBySomeoneElse @1 :Void;
+		# The scenario has been updated by another script since you downloaded the scenario info. To force
+		# the update, get the scenario info again (with the updated modification timestamp) and resubmit
+		# your changes.
+		idAlreadyExists @2 :Void;
+	}
+}
+
+interface ScenarioSubscriber {
+	notifyScenarioUpdated @0 ();
+}
+
+struct ScenarioSubscribeScenarioError {
+	scenarioDeleted @0 :Void;
+}
+
+struct ScenarioCreateChildScenarioError {
+	union {
+		scenarioDeleted @0 :Void;
+		idAlreadyExists @1 :Void;
+		maxScenarioTreeDepthExceeded @2 :Void;
+		scenarioLimitExceeded @3 :Void;
+	}
+}
+
+struct ScenarioMoveError {
+	union {
+		thisScenarioDeleted @0 :Void;
+		targetScenarioDeleted @1 :Void;
+		targetScenarioIsChildOfThisScenario @2 :Void;
+		# You cannot move a scenario inside of itself
+		maxScenarioTreeDepthExceeded @3 :Void;
+	}
+}
+
+struct ScenarioDeleteError {
+	union {
+		scenarioAlreadyDeleted @0 :Void;
+		scenarioHasTestingData :group {
+			scenarioId @1 :Text;
+		}
+		# You cannot delete a scenario that has been used for testing. Instead, you can create a scenario
+		# container for unwanted, used scenarios.
+	}
 }
 
 struct BuildInfo {

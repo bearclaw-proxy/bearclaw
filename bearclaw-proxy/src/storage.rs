@@ -7,17 +7,27 @@ use rusqlite::OptionalExtension;
 /// Lets us identify if we created the file
 const APPLICATION_ID: u32 = 0xb34c14;
 /// Updated whenever our schema changes. Will be used to know when to migrate database versions.
-const FILE_FORMAT_VERSION: i64 = 1;
+const FILE_FORMAT_VERSION: i64 = 2;
 // Let's start with the highest compression level, we can scale it back later if it causes problems
 const ZSTD_COMPRESSION_LEVEL: i32 = 22;
 // NOTE: Check to see if you should update this if you add any SQL statements
-const PREPARED_STATEMENT_CACHE_CAPACITY: usize = 32;
+const PREPARED_STATEMENT_CACHE_CAPACITY: usize = 64;
 const LOAD_HTTP_REQUEST_INITIAL_BUFFER_CAPACITY: usize = 512;
 const LOAD_HTTP_RESPONSE_INITIAL_BUFFER_CAPACITY: usize = 1024;
+// TODO: This should be configurable
+const MAX_SCENARIOS: u32 = 256;
+// TODO: This limit should be stored in the database
+const MAX_SCENARIO_TREE_DEPTH: u8 = 16;
+/// Maximum number of messages that can be queued in the various broadcast notification channels.
+/// If a receiver cannot process messages fast enough it will receive an error and fail.
+/// TODO: Value chosen arbitrarily.
+const BROADCAST_CHANNEL_CAPACITY: usize = 128;
 
 pub(super) struct Database {
     db: rusqlite::Connection,
     storage_stats: StorageStats,
+    methodology_update_tx: tokio::sync::watch::Sender<()>,
+    scenario_update_tx: tokio::sync::broadcast::Sender<ScenarioId>,
 }
 
 impl Database {
@@ -50,9 +60,14 @@ impl Database {
             }
         };
 
+        let (methodology_update_tx, _) = tokio::sync::watch::channel(());
+        let (scenario_update_tx, _) = tokio::sync::broadcast::channel(BROADCAST_CHANNEL_CAPACITY);
+
         Ok(Self {
             db,
             storage_stats: Default::default(),
+            methodology_update_tx,
+            scenario_update_tx,
         })
     }
 
@@ -69,17 +84,17 @@ impl Database {
                     http_message,
                     reply,
                 } => {
-                    let history_id = self.store_http_history(test_id, http_message)?;
+                    let history_id = self.store_http_history(test_id, http_message).unwrap();
                     reply
                         .send(HistoryId(history_id))
                         .map_err(|_| RunError::Channel)?;
                 }
                 Command::GetHttpHistory { history_id, reply } => {
-                    let http_message = self.get_http_history(history_id)?;
+                    let http_message = self.get_http_history(history_id).unwrap();
                     reply.send(http_message).map_err(|_| RunError::Channel)?;
                 }
                 Command::CreateHistorySearch { reply } => {
-                    let result = self.create_history_search()?;
+                    let result = self.create_history_search().unwrap();
                     reply.send(result).map_err(|_| RunError::Channel)?;
                 }
                 Command::GetHistorySearchItems {
@@ -88,22 +103,109 @@ impl Database {
                     count,
                     reply,
                 } => {
-                    let result =
-                        self.get_history_search_items(history_search_id, start_index, count)?;
+                    let result = self
+                        .get_history_search_items(history_search_id, start_index, count)
+                        .unwrap();
                     reply.send(result).map_err(|_| RunError::Channel)?;
                 }
                 Command::GetHistorySearchCount {
                     history_search_id,
                     reply,
                 } => {
-                    let result = self.get_history_search_count(history_search_id)?;
+                    let result = self.get_history_search_count(history_search_id).unwrap();
                     reply.send(result).map_err(|_| RunError::Channel)?;
                 }
                 Command::DeleteHistorySearch {
                     history_search_id,
                     reply,
                 } => {
-                    let result = self.delete_history_search(history_search_id)?;
+                    let result = self.delete_history_search(history_search_id).unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::ListScenarios { reply } => {
+                    let result = self.list_scenarios().unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::CreateScenario {
+                    parent,
+                    user_defined_id,
+                    description,
+                    type_,
+                    reply,
+                } => {
+                    let result = self
+                        .create_scenario(parent, user_defined_id, description, type_)
+                        .unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::LookupScenario {
+                    user_defined_id,
+                    reply,
+                } => {
+                    let result = self.lookup_scenario(user_defined_id).unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::MoveScenarioBefore {
+                    move_scenario_id,
+                    before_scenario_id,
+                    reply,
+                } => {
+                    let result = self
+                        .move_scenario_before(move_scenario_id, before_scenario_id)
+                        .unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::MoveScenarioInside {
+                    move_scenario_id,
+                    parent_scenario_id,
+                    reply,
+                } => {
+                    let result = self
+                        .move_scenario_inside(move_scenario_id, parent_scenario_id)
+                        .unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::MoveScenarioAfter {
+                    move_scenario_id,
+                    after_scenario_id,
+                    reply,
+                } => {
+                    let result = self
+                        .move_scenario_after(move_scenario_id, after_scenario_id)
+                        .unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::DeleteScenario { scenario_id, reply } => {
+                    let result = self.delete_scenario(scenario_id).unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                }
+                Command::GetScenarioInfo { scenario_id, reply } => {
+                    let result = self.get_scenario_info(scenario_id).unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::UpdateScenarioInfo {
+                    scenario_id,
+                    user_defined_id,
+                    description,
+                    previous_modified_time,
+                    reply,
+                } => {
+                    let result = self
+                        .update_scenario_info(
+                            scenario_id,
+                            user_defined_id,
+                            description,
+                            previous_modified_time,
+                        )
+                        .unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::SubscribeScenario { reply } => {
+                    let result = self.subscribe_scenario().unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::SubscribeMethodology { reply } => {
+                    let result = self.subscribe_methodology().unwrap();
                     reply.send(result).map_err(|_| RunError::Channel)?;
                 }
             }
@@ -464,6 +566,785 @@ impl Database {
     ) -> RunResult<LookupResult<()>> {
         Ok(Ok(()))
     }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn list_scenarios(&mut self) -> RunResult<Vec<ScenarioTreeNode>> {
+        let txn = self.db.transaction()?;
+        let parent_id = None;
+        let recursion_depth = 0;
+        let result = list_scenario_children(&txn, parent_id, recursion_depth)?;
+
+        txn.commit()?;
+
+        Ok(result)
+    }
+
+    fn create_scenario(
+        &mut self,
+        parent_id: Option<ScenarioId>,
+        user_defined_id: String,
+        description: String,
+        type_: ScenarioType,
+    ) -> RunResult<Result<ScenarioId, CreateScenarioError>> {
+        let txn = self.db.transaction()?;
+        let parent_id = parent_id.map(|x| x.0);
+
+        let num_scenarios: u32 = {
+            let mut query = txn.prepare_cached("SELECT COUNT(scenario_id) FROM scenario")?;
+
+            query.query_row([], |row| row.get(0))?
+        };
+
+        if num_scenarios >= MAX_SCENARIOS {
+            return Ok(Err(CreateScenarioError::ScenarioLimitExceeded));
+        }
+
+        if let Some(parent_id) = parent_id {
+            // Check that the parent exists and that the new child will not exceed the recursion
+            // limit
+            if let Some(depth) = get_scenario_depth(&txn, parent_id)? {
+                if depth + 1 >= MAX_SCENARIO_TREE_DEPTH {
+                    return Ok(Err(CreateScenarioError::MaxScenarioTreeDepthExceeded));
+                }
+            } else {
+                return Ok(Err(CreateScenarioError::ParentDoesNotExist));
+            }
+        }
+
+        {
+            let mut query =
+                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+
+            if query
+                .query_row((&user_defined_id,), |_| Ok(()))
+                .optional()?
+                .is_some()
+            {
+                return Ok(Err(CreateScenarioError::IdAlreadyExists));
+            }
+        }
+
+        let next_position = {
+            if parent_id.is_some() {
+                let mut query =
+                    txn.prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")?;
+
+                if let Some(position) =
+                    query.query_row((parent_id,), |row| Ok(row.get::<usize, Option<u32>>(0)))??
+                {
+                    position + 1
+                } else {
+                    1
+                }
+            } else {
+                let mut query = txn
+                    .prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id IS NULL")?;
+
+                if let Some(position) =
+                    query.query_row([], |row| Ok(row.get::<usize, Option<u32>>(0)))??
+                {
+                    position + 1
+                } else {
+                    1
+                }
+            }
+        };
+
+        let scenario_id = {
+            let scenario_type_enum_id: u8 = type_.into();
+            let now = chrono::offset::Local::now();
+            let mut insert = txn.prepare_cached(
+                "
+                INSERT INTO scenario (
+                    parent_id,
+                    position,
+                    scenario_type_enum_id,
+                    user_defined_id,
+                    description,
+                    date_created,
+                    date_modified_secs,
+                    date_modified_nsecs
+                ) VALUES (?,?,?,?,?,?,?,?)
+                ",
+            )?;
+
+            insert.execute((
+                parent_id,
+                next_position,
+                scenario_type_enum_id,
+                &user_defined_id,
+                &description,
+                now.timestamp(),
+                now.timestamp(),
+                now.timestamp_subsec_nanos(),
+            ))?;
+
+            txn.last_insert_rowid()
+        };
+
+        txn.commit()?;
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        Ok(Ok(ScenarioId(scenario_id)))
+    }
+
+    fn lookup_scenario(&mut self, user_defined_id: String) -> RunResult<LookupResult<ScenarioId>> {
+        let txn = self.db.transaction()?;
+
+        let result = {
+            let mut query =
+                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+            let query = query
+                .query_row((user_defined_id,), |row| row.get::<usize, i64>(0))
+                .optional()?;
+
+            if let Some(id) = query {
+                Ok(ScenarioId(id))
+            } else {
+                Err(LookupError::NotFound)
+            }
+        };
+
+        txn.commit()?;
+
+        Ok(result)
+    }
+
+    fn move_scenario_before(
+        &mut self,
+        move_scenario_id: ScenarioId,
+        before_scenario_id: ScenarioId,
+    ) -> RunResult<Result<(), MoveScenarioError>> {
+        let txn = self.db.transaction()?;
+        let (old_position, old_parent) = {
+            let mut query = txn
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+            let query = query
+                .query_row((move_scenario_id.0,), |row| {
+                    Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
+                })
+                .optional()?;
+
+            if let Some((position, parent_id)) = query {
+                (position, parent_id)
+            } else {
+                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+            }
+        };
+        let (before_position, new_parent) = {
+            let mut query = txn
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+            let query = query
+                .query_row((before_scenario_id.0,), |row| {
+                    Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
+                })
+                .optional()?;
+
+            if let Some((position, parent_id)) = query {
+                (position, parent_id)
+            } else {
+                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+            }
+        };
+
+        // NOTE: We allow moving to a different parent
+
+        if old_parent != new_parent {
+            if let Some(new_parent) = new_parent {
+                // Make sure we aren't reparented under one of our own children
+                {
+                    let mut query = txn.prepare_cached(
+                        "
+                        WITH RECURSIVE
+                            parent(scenario_id, parent_id)
+                        AS
+                        (
+                            SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+
+                            UNION ALL
+
+                            SELECT
+                                s.scenario_id, s.parent_id
+                            FROM
+                                parent p
+                            JOIN
+                                scenario s
+                            ON
+                                p.parent_id = s.scenario_id
+                        )
+                        SELECT scenario_id FROM parent WHERE scenario_id = ?
+                        ",
+                    )?;
+
+                    if query
+                        .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
+                        .optional()?
+                        .is_some()
+                    {
+                        // The new parent is the scenario or a child of the scenario
+                        return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+                    }
+                }
+
+                // Make sure we don't exceed the depth limit
+                let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
+                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+                let new_total_depth = new_parent_depth + my_child_depth;
+
+                if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
+                    return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+                }
+            }
+        }
+
+        // First, temporarily set the position of the scenario to some unused value so we don't
+        // violate a uniqueness constraint while updating the positions
+        {
+            // We guarantee position 0 is never used
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
+            update.execute((move_scenario_id.0,))?;
+        }
+
+        // Now, change the position of everything after the old position on the old parent to
+        // remove the gap
+        if let Some(old_parent) = old_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
+            )?;
+            update.execute((old_parent, old_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
+            update.execute((old_position,))?;
+        }
+
+        let mut target_position = before_position;
+
+        if old_parent == new_parent && target_position > old_position {
+            // account for the shift we just did if we're moving inside the same parent
+            target_position -= 1;
+        }
+
+        let target_position = target_position;
+
+        // Then, change the position of the target and everything after it on the new parent to
+        // create a gap
+
+        // This increases the position by 1, but does it in a roundabout way to avoid violating a
+        // uniqueness constraint. TODO: Is there a better way to do this?
+
+        if let Some(new_parent) = new_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position + 999999 WHERE parent_id = ? AND position >= ?",
+            )?;
+            update.execute((new_parent, target_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?")?;
+            update.execute((target_position,))?;
+        }
+
+        if let Some(new_parent) = new_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position - 999998 WHERE parent_id = ? AND position >= ?",
+            )?;
+            update.execute((new_parent, target_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?")?;
+            update.execute((target_position,))?;
+        }
+
+        // Finally, set the new position and parent on the scenario
+        {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+            )?;
+            update.execute((new_parent, target_position, move_scenario_id.0))?;
+        }
+
+        txn.commit()?;
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        Ok(Ok(()))
+    }
+
+    fn move_scenario_after(
+        &mut self,
+        move_scenario_id: ScenarioId,
+        after_scenario_id: ScenarioId,
+    ) -> RunResult<Result<(), MoveScenarioError>> {
+        let txn = self.db.transaction()?;
+        let (old_position, old_parent) = {
+            let mut query = txn
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+            let query = query
+                .query_row((move_scenario_id.0,), |row| {
+                    Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
+                })
+                .optional()?;
+
+            if let Some((position, parent_id)) = query {
+                (position, parent_id)
+            } else {
+                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+            }
+        };
+        let (after_position, new_parent) = {
+            let mut query = txn
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+            let query = query
+                .query_row((after_scenario_id.0,), |row| {
+                    Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
+                })
+                .optional()?;
+
+            if let Some((position, parent_id)) = query {
+                (position, parent_id)
+            } else {
+                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+            }
+        };
+
+        // NOTE: We allow moving to a different parent
+
+        if old_parent != new_parent {
+            if let Some(new_parent) = new_parent {
+                // Make sure we aren't reparented under one of our own children
+                {
+                    let mut query = txn.prepare_cached(
+                        "
+                        WITH RECURSIVE
+                            parent(scenario_id, parent_id)
+                        AS
+                        (
+                            SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+
+                            UNION ALL
+
+                            SELECT
+                                s.scenario_id, s.parent_id
+                            FROM
+                                parent p
+                            JOIN
+                                scenario s
+                            ON
+                                p.parent_id = s.scenario_id
+                        )
+                        SELECT scenario_id FROM parent WHERE scenario_id = ?
+                        ",
+                    )?;
+
+                    if query
+                        .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
+                        .optional()?
+                        .is_some()
+                    {
+                        // The new parent is the scenario or a child of the scenario
+                        return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+                    }
+                }
+
+                // Make sure we don't exceed the depth limit
+                let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
+                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+                let new_total_depth = new_parent_depth + my_child_depth;
+
+                if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
+                    return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+                }
+            }
+        }
+
+        // First, temporarily set the position of the scenario to some unused value so we don't
+        // violate a uniqueness constraint while updating the positions
+        {
+            // We guarantee position 0 is never used
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
+            update.execute((move_scenario_id.0,))?;
+        }
+
+        // Now, change the position of everything after the old position on the old parent to
+        // remove the gap
+        if let Some(old_parent) = old_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
+            )?;
+            update.execute((old_parent, old_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
+            update.execute((old_position,))?;
+        }
+
+        let mut target_position = after_position + 1;
+
+        if old_parent == new_parent && target_position > old_position {
+            // account for the shift we just did if we're moving inside the same parent
+            target_position -= 1;
+        }
+
+        let target_position = target_position;
+
+        // Then, change the position of the target and everything after it on the new parent to
+        // create a gap
+
+        // This increases the position by 1, but does it in a roundabout way to avoid violating a
+        // uniqueness constraint. TODO: Is there a better way to do this?
+
+        if let Some(new_parent) = new_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position + 999999 WHERE parent_id = ? AND position >= ?",
+            )?;
+            update.execute((new_parent, target_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?")?;
+            update.execute((target_position,))?;
+        }
+
+        if let Some(new_parent) = new_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position - 999998 WHERE parent_id = ? AND position >= ?",
+            )?;
+            update.execute((new_parent, target_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?")?;
+            update.execute((target_position,))?;
+        }
+
+        // Finally, set the new position and parent on the scenario
+        {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+            )?;
+            update.execute((new_parent, target_position, move_scenario_id.0))?;
+        }
+
+        txn.commit()?;
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        Ok(Ok(()))
+    }
+
+    fn move_scenario_inside(
+        &mut self,
+        move_scenario_id: ScenarioId,
+        parent_scenario_id: ScenarioId,
+    ) -> RunResult<Result<(), MoveScenarioError>> {
+        let txn = self.db.transaction()?;
+        let (old_position, old_parent) = {
+            let mut query = txn
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+            let query = query
+                .query_row((move_scenario_id.0,), |row| {
+                    Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
+                })
+                .optional()?;
+
+            if let Some(row) = query {
+                row
+            } else {
+                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+            }
+        };
+
+        {
+            let mut query =
+                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE scenario_id = ?")?;
+
+            if query
+                .query_row((parent_scenario_id.0,), |_| Ok(()))
+                .optional()?
+                .is_none()
+            {
+                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+            }
+        };
+
+        // NOTE: In this case we are always moving to a different parent
+
+        let new_parent = parent_scenario_id.0;
+
+        if old_parent == Some(new_parent) {
+            // If the target is our parent, we don't need to do anything
+            txn.commit()?;
+            return Ok(Ok(()));
+        }
+
+        // Make sure we aren't reparented under one of our own children
+        {
+            let mut query = txn.prepare_cached(
+                "
+                WITH RECURSIVE
+                    parent(scenario_id, parent_id)
+                AS
+                (
+                    SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+
+                    UNION ALL
+
+                    SELECT
+                        s.scenario_id, s.parent_id
+                    FROM
+                        parent p
+                    JOIN
+                        scenario s
+                    ON
+                        p.parent_id = s.scenario_id
+                )
+                SELECT scenario_id FROM parent WHERE scenario_id = ?
+                ",
+            )?;
+
+            if query
+                .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
+                .optional()?
+                .is_some()
+            {
+                // The new parent is the scenario or a child of the scenario
+                return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+            }
+        }
+
+        // Make sure we don't exceed the depth limit
+        {
+            let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
+            let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+            let new_total_depth = new_parent_depth + my_child_depth;
+
+            if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
+                return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+            }
+        }
+
+        // First, temporarily set the position of the scenario to some unused value so we don't
+        // violate a uniqueness constraint while updating the positions
+        {
+            // We guarantee position 0 is never used
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
+
+            update.execute((move_scenario_id.0,))?;
+        }
+
+        // Now, change the position of everything after the old position on the old parent to
+        // remove the gap
+        if let Some(old_parent) = old_parent {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
+            )?;
+
+            update.execute((old_parent, old_position))?;
+        } else {
+            let mut update =
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
+
+            update.execute((old_position,))?;
+        }
+
+        // Get the first free position under the new parent
+        let target_position = {
+            let mut query =
+                txn.prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")?;
+
+            if let Some(position) =
+                query.query_row((new_parent,), |row| Ok(row.get::<usize, Option<u32>>(0)))??
+            {
+                position + 1
+            } else {
+                1
+            }
+        };
+
+        // Finally, set the new position and parent on the scenario
+        {
+            let mut update = txn.prepare_cached(
+                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+            )?;
+
+            update.execute((new_parent, target_position, move_scenario_id.0))?;
+        }
+
+        txn.commit()?;
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        Ok(Ok(()))
+    }
+
+    fn delete_scenario(
+        &mut self,
+        scenario_id: ScenarioId,
+    ) -> RunResult<Result<(), DeleteScenarioError>> {
+        let txn = self.db.transaction()?;
+        let result = delete_scenario(&txn, scenario_id.0);
+
+        txn.commit()?;
+
+        // Notify subscribers that this scenario has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.scenario_update_tx.send(scenario_id);
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        result
+    }
+
+    fn get_scenario_info(
+        &mut self,
+        scenario_id: ScenarioId,
+    ) -> RunResult<LookupResult<ScenarioInfo>> {
+        let txn = self.db.transaction()?;
+        let scenario_info = {
+            let mut query = txn.prepare_cached(
+                "
+            SELECT
+                scenario_id,
+                scenario_type_enum_id,
+                user_defined_id,
+                description,
+                date_created,
+                date_modified_secs,
+                date_modified_nsecs
+            FROM
+                scenario
+            WHERE
+                scenario_id = ?
+            ",
+            )?;
+            let scenario_info = query.query_row((scenario_id.0,), deserialize_scenario);
+
+            if let Ok(scenario_info) = scenario_info {
+                scenario_info
+            } else {
+                return Ok(Err(LookupError::NotFound));
+            }
+        };
+
+        txn.commit()?;
+
+        Ok(Ok(scenario_info))
+    }
+
+    fn update_scenario_info(
+        &mut self,
+        scenario_id: ScenarioId,
+        user_defined_id: String,
+        description: String,
+        previous_modified_time: chrono::DateTime<chrono::Local>,
+    ) -> RunResult<Result<(), UpdateScenarioInfoError>> {
+        let txn = self.db.transaction()?;
+        let existing_info = {
+            let mut query = txn.prepare_cached(
+                "
+            SELECT
+                scenario_id,
+                scenario_type_enum_id,
+                user_defined_id,
+                description,
+                date_created,
+                date_modified_secs,
+                date_modified_nsecs
+            FROM
+                scenario
+            WHERE
+                scenario_id = ?
+            ",
+            )?;
+            let scenario_info = query.query_row((scenario_id.0,), deserialize_scenario);
+
+            if let Ok(scenario_info) = scenario_info {
+                scenario_info
+            } else {
+                return Ok(Err(UpdateScenarioInfoError::ScenarioNotFound));
+            }
+        };
+
+        if previous_modified_time != existing_info.modified_time {
+            return Ok(Err(
+                UpdateScenarioInfoError::ModifiedTimeDoesNotMatchDatabase,
+            ));
+        }
+
+        if user_defined_id != existing_info.user_defined_id {
+            let mut query =
+                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+
+            if query
+                .query_row((&user_defined_id,), |_| Ok(()))
+                .optional()?
+                .is_some()
+            {
+                return Ok(Err(UpdateScenarioInfoError::UserDefinedIdAlreadyExists));
+            }
+        }
+
+        let (date_modified_secs, date_modified_nsecs) = {
+            let now = chrono::offset::Local::now();
+            (now.timestamp(), now.timestamp_subsec_nanos())
+        };
+
+        {
+            let mut update = txn.prepare_cached(
+                "
+                UPDATE
+                    scenario
+                SET
+                    user_defined_id = ?,
+                    description = ?,
+                    date_modified_secs = ?,
+                    date_modified_nsecs = ?
+                WHERE
+                    scenario_id = ?
+                ",
+            )?;
+
+            update.execute((
+                &user_defined_id,
+                &description,
+                date_modified_secs,
+                date_modified_nsecs,
+                scenario_id.0,
+            ))?;
+        }
+
+        txn.commit()?;
+
+        // Notify subscribers that this scenario has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.scenario_update_tx.send(scenario_id);
+
+        // Notify subscribers that the methodology has been updated. It's OK for this to return an
+        // error if there are no subscribers.
+        let _ = self.methodology_update_tx.send(());
+
+        Ok(Ok(()))
+    }
+
+    fn subscribe_scenario(&self) -> RunResult<tokio::sync::broadcast::Receiver<ScenarioId>> {
+        Ok(self.scenario_update_tx.subscribe())
+    }
+
+    fn subscribe_methodology(&self) -> RunResult<tokio::sync::watch::Receiver<()>> {
+        Ok(self.methodology_update_tx.subscribe())
+    }
 }
 
 pub(super) type OpenResult<T> = std::result::Result<T, OpenError>;
@@ -554,6 +1435,56 @@ pub(crate) enum Command {
         history_search_id: HistorySearchId,
         reply: tokio::sync::oneshot::Sender<LookupResult<()>>,
     },
+    ListScenarios {
+        reply: tokio::sync::oneshot::Sender<Vec<ScenarioTreeNode>>,
+    },
+    CreateScenario {
+        parent: Option<ScenarioId>,
+        user_defined_id: String,
+        description: String,
+        type_: ScenarioType,
+        reply: tokio::sync::oneshot::Sender<Result<ScenarioId, CreateScenarioError>>,
+    },
+    LookupScenario {
+        user_defined_id: String,
+        reply: tokio::sync::oneshot::Sender<LookupResult<ScenarioId>>,
+    },
+    MoveScenarioBefore {
+        move_scenario_id: ScenarioId,
+        before_scenario_id: ScenarioId,
+        reply: tokio::sync::oneshot::Sender<Result<(), MoveScenarioError>>,
+    },
+    MoveScenarioAfter {
+        move_scenario_id: ScenarioId,
+        after_scenario_id: ScenarioId,
+        reply: tokio::sync::oneshot::Sender<Result<(), MoveScenarioError>>,
+    },
+    MoveScenarioInside {
+        move_scenario_id: ScenarioId,
+        parent_scenario_id: ScenarioId,
+        reply: tokio::sync::oneshot::Sender<Result<(), MoveScenarioError>>,
+    },
+    DeleteScenario {
+        scenario_id: ScenarioId,
+        reply: tokio::sync::oneshot::Sender<Result<(), DeleteScenarioError>>,
+    },
+    GetScenarioInfo {
+        scenario_id: ScenarioId,
+        reply: tokio::sync::oneshot::Sender<LookupResult<ScenarioInfo>>,
+    },
+    UpdateScenarioInfo {
+        scenario_id: ScenarioId,
+        user_defined_id: String,
+        description: String,
+        previous_modified_time: chrono::DateTime<chrono::Local>,
+        reply: tokio::sync::oneshot::Sender<Result<(), UpdateScenarioInfoError>>,
+    },
+    SubscribeScenario {
+        reply: tokio::sync::oneshot::Sender<tokio::sync::broadcast::Receiver<ScenarioId>>,
+    },
+    SubscribeMethodology {
+        reply: tokio::sync::oneshot::Sender<tokio::sync::watch::Receiver<()>>,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -596,6 +1527,67 @@ pub(crate) enum HttpError {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HistorySearchId;
+
+#[derive(Debug)]
+pub(crate) struct ScenarioTreeNode {
+    pub(crate) info: ScenarioInfo,
+    pub(crate) children: Vec<ScenarioTreeNode>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ScenarioInfo {
+    pub(crate) id: ScenarioId,
+    pub(crate) user_defined_id: String,
+    pub(crate) description: String,
+    pub(crate) type_: ScenarioType,
+    pub(crate) created_time: chrono::DateTime<chrono::Local>,
+    pub(crate) modified_time: chrono::DateTime<chrono::Local>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ScenarioId(i64);
+
+// NOTE: This must be synced with the enum in the database definition
+//       and the capnp IDL
+#[derive(Debug, Eq, num_enum::IntoPrimitive, PartialEq, num_enum::TryFromPrimitive)]
+#[repr(u8)]
+pub(crate) enum ScenarioType {
+    Container = 2,
+    Generic = 3,
+    Location = 4,
+    Endpoint = 5,
+    Authorization = 6,
+    BusinessLogic = 7,
+}
+
+#[derive(Debug)]
+pub(crate) enum CreateScenarioError {
+    IdAlreadyExists,
+    ParentDoesNotExist,
+    MaxScenarioTreeDepthExceeded,
+    ScenarioLimitExceeded,
+}
+
+#[derive(Debug)]
+pub(crate) enum MoveScenarioError {
+    MoveScenarioNotFound,
+    TargetScenarioNotFound,
+    TargetScenarioIsChildOfMoveScenario,
+    MaxScenarioTreeDepthExceeded,
+}
+
+#[derive(Debug)]
+pub(crate) enum DeleteScenarioError {
+    ScenarioNotFound,
+    ScenarioHasTestingData(String),
+}
+
+#[derive(Debug)]
+pub(crate) enum UpdateScenarioInfoError {
+    ScenarioNotFound,
+    ModifiedTimeDoesNotMatchDatabase,
+    UserDefinedIdAlreadyExists,
+}
 
 pub(super) type RunResult<T> = std::result::Result<T, RunError>;
 
@@ -827,6 +1819,253 @@ fn load_http_response(
     Ok(bytes.freeze())
 }
 
+fn list_scenario_children(
+    txn: &rusqlite::Transaction,
+    parent_id: Option<ScenarioId>,
+    recursion_depth: u8,
+) -> RunResult<Vec<ScenarioTreeNode>> {
+    // TODO: This limit should be stored in the database
+    assert!(recursion_depth <= MAX_SCENARIO_TREE_DEPTH);
+
+    let mut query = if parent_id.is_some() {
+        txn.prepare_cached(
+            "
+            SELECT
+                scenario_id,
+                scenario_type_enum_id,
+                user_defined_id,
+                description,
+                date_created,
+                date_modified_secs,
+                date_modified_nsecs
+            FROM
+                scenario
+            WHERE
+                parent_id = ?
+            ORDER BY
+                position
+            ",
+        )?
+    } else {
+        txn.prepare_cached(
+            "
+            SELECT
+                scenario_id,
+                scenario_type_enum_id,
+                user_defined_id,
+                description,
+                date_created,
+                date_modified_secs,
+                date_modified_nsecs
+            FROM
+                scenario
+            WHERE
+                parent_id IS NULL
+                -- This is the 'Unassigned Proxy Traffic' scenario
+                AND scenario_id > 1
+            ORDER BY
+                position
+            ",
+        )?
+    };
+
+    let query = if parent_id.is_some() {
+        query.query_map((parent_id.map(|x| x.0),), deserialize_scenario)?
+    } else {
+        query.query_map([], deserialize_scenario)?
+    };
+
+    let mut result = Vec::new();
+
+    for info in query {
+        let info = info?;
+        let parent_id = Some(info.id);
+        let recursion_depth = recursion_depth + 1;
+        let children = list_scenario_children(txn, parent_id, recursion_depth)?;
+
+        result.push(ScenarioTreeNode { info, children });
+    }
+
+    Ok(result)
+}
+
+fn deserialize_scenario(row: &rusqlite::Row) -> rusqlite::Result<ScenarioInfo> {
+    let scenario_id = row.get(0)?;
+    let scenario_type_enum_id = row.get::<usize, u8>(1)?;
+    let user_defined_id = row.get(2)?;
+    let description = row.get(3)?;
+    let date_created = row.get(4)?;
+    let date_modified_secs = row.get(5)?;
+    let date_modified_nsecs = row.get(6)?;
+
+    Ok(ScenarioInfo {
+        id: ScenarioId(scenario_id),
+        user_defined_id,
+        description,
+        type_: ScenarioType::try_from(scenario_type_enum_id).unwrap(),
+        created_time: chrono::Local.timestamp_opt(date_created, 0).unwrap(),
+        modified_time: chrono::Local
+            .timestamp_opt(date_modified_secs, date_modified_nsecs)
+            .unwrap(),
+    })
+}
+
+/// If the scenario exists, returns the absolute depth of the scenario
+fn get_scenario_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> RunResult<Option<u8>> {
+    let mut query = txn.prepare_cached(
+        "
+        WITH RECURSIVE
+            depth(scenario_id, depth)
+        AS
+        (
+            SELECT scenario_id, 0 FROM scenario WHERE parent_id IS NULL
+
+            UNION ALL
+
+            SELECT
+                s.scenario_id, depth + 1
+            FROM
+                depth d
+            JOIN
+                scenario s
+            ON
+                d.scenario_id = s.parent_id
+        )
+        SELECT depth FROM depth WHERE scenario_id = ?
+        ",
+    )?;
+
+    if let Some(depth) = query
+        .query_row((scenario_id,), |row| Ok(row.get(0)))
+        .optional()?
+    {
+        let depth = depth?;
+
+        Ok(Some(depth))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Returns the deepest depth of the scenario and all the child scenarios relative to the scenario
+/// itself
+fn get_scenario_child_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> RunResult<u8> {
+    let mut query = txn.prepare_cached(
+        "
+        WITH RECURSIVE
+            depth(scenario_id, depth)
+        AS
+        (
+            SELECT scenario_id, 2 FROM scenario WHERE parent_id = ?
+
+            UNION ALL
+
+            SELECT
+                s.scenario_id, depth + 1
+            FROM
+                depth d
+            JOIN
+                scenario s
+            ON
+                d.scenario_id = s.parent_id
+        )
+        SELECT MAX(depth) FROM depth
+        ",
+    )?;
+
+    if let Some(depth) = query
+        .query_row((scenario_id,), |row| Ok(row.get(0)))
+        .optional()?
+    {
+        let depth = depth?;
+
+        if let Some(depth) = depth {
+            Ok(depth)
+        } else {
+            Ok(1)
+        }
+    } else {
+        Ok(1)
+    }
+}
+
+fn delete_scenario(
+    txn: &rusqlite::Transaction,
+    scenario_id: i64,
+) -> RunResult<Result<(), DeleteScenarioError>> {
+    // Verify that we exist and get some information we'll need later
+    let (parent_id, position, user_defined_id) = {
+        let mut query = txn.prepare_cached(
+            "SELECT parent_id, position, user_defined_id FROM scenario WHERE scenario_id = ?",
+        )?;
+        let query = query
+            .query_row((scenario_id,), |row| {
+                Ok((
+                    row.get::<usize, Option<i64>>(0)?,
+                    row.get::<usize, u32>(1)?,
+                    row.get(2)?,
+                ))
+            })
+            .optional()?;
+
+        if let Some(values) = query {
+            values
+        } else {
+            return Ok(Err(DeleteScenarioError::ScenarioNotFound));
+        }
+    };
+
+    // Recursively delete our children before deleting ourself
+    {
+        let mut query =
+            txn.prepare_cached("SELECT scenario_id FROM scenario WHERE parent_id = ?")?;
+        let query = query.query_map((scenario_id,), |row| row.get::<usize, i64>(0))?;
+
+        for child_id in query {
+            let child_id = child_id?;
+            let result = delete_scenario(txn, child_id)?;
+
+            if let Some(e) = result.err() {
+                return Ok(Err(e));
+            }
+        }
+    }
+
+    // Delete ourself. We are relying on the database engine to enforce constraints to tell if
+    // we can delete the record or not. TODO: Make sure we verify that constraint enforcement is
+    // turned on.
+    {
+        let mut delete = txn.prepare_cached("DELETE FROM scenario WHERE scenario_id = ?")?;
+
+        match delete.execute((scenario_id,)) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(e, _)) => {
+                if e.code == rusqlite::ErrorCode::ConstraintViolation {
+                    return Ok(Err(DeleteScenarioError::ScenarioHasTestingData(
+                        user_defined_id,
+                    )));
+                }
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    // Adjust the position of any scenarios after this one to avoid any gaps
+    if let Some(parent_id) = parent_id {
+        let mut update = txn.prepare_cached(
+            "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
+        )?;
+        update.execute((parent_id, position))?;
+    } else {
+        let mut update = txn.prepare_cached(
+            "UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?",
+        )?;
+        update.execute((position,))?;
+    }
+
+    Ok(Ok(()))
+}
+
 #[derive(Clone)]
 pub(crate) struct Channel {
     storage_tx: tokio::sync::mpsc::Sender<Command>,
@@ -914,6 +2153,158 @@ impl Channel {
                 history_search_id,
                 reply,
             })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn list_scenarios(&self) -> ChannelResult<Vec<ScenarioTreeNode>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::ListScenarios { reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn create_scenario(
+        &self,
+        parent: Option<ScenarioId>,
+        user_defined_id: String,
+        description: String,
+        type_: ScenarioType,
+    ) -> ChannelResult<Result<ScenarioId, CreateScenarioError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::CreateScenario {
+                parent,
+                user_defined_id,
+                description,
+                type_,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn lookup_scenario(
+        &self,
+        user_defined_id: String,
+    ) -> ChannelResult<LookupResult<ScenarioId>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::LookupScenario {
+                user_defined_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn move_scenario_before(
+        &self,
+        move_scenario_id: ScenarioId,
+        before_scenario_id: ScenarioId,
+    ) -> ChannelResult<Result<(), MoveScenarioError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::MoveScenarioBefore {
+                move_scenario_id,
+                before_scenario_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn move_scenario_after(
+        &self,
+        move_scenario_id: ScenarioId,
+        after_scenario_id: ScenarioId,
+    ) -> ChannelResult<Result<(), MoveScenarioError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::MoveScenarioAfter {
+                move_scenario_id,
+                after_scenario_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn move_scenario_inside(
+        &self,
+        move_scenario_id: ScenarioId,
+        parent_scenario_id: ScenarioId,
+    ) -> ChannelResult<Result<(), MoveScenarioError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::MoveScenarioInside {
+                move_scenario_id,
+                parent_scenario_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn delete_scenario(
+        &self,
+        scenario_id: ScenarioId,
+    ) -> ChannelResult<Result<(), DeleteScenarioError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::DeleteScenario { scenario_id, reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn get_scenario_info(
+        &self,
+        scenario_id: ScenarioId,
+    ) -> ChannelResult<LookupResult<ScenarioInfo>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::GetScenarioInfo { scenario_id, reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn update_scenario_info(
+        &self,
+        scenario_id: ScenarioId,
+        user_defined_id: String,
+        description: String,
+        previous_modified_time: chrono::DateTime<chrono::Local>,
+    ) -> ChannelResult<Result<(), UpdateScenarioInfoError>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::UpdateScenarioInfo {
+                scenario_id,
+                user_defined_id,
+                description,
+                previous_modified_time,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn subscribe_scenario(
+        &self,
+    ) -> ChannelResult<tokio::sync::broadcast::Receiver<ScenarioId>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::SubscribeScenario { reply })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn subscribe_methodology(
+        &self,
+    ) -> ChannelResult<tokio::sync::watch::Receiver<()>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::SubscribeMethodology { reply })
             .await?;
         reply_rx.await.map_err(|e| e.into())
     }

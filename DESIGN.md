@@ -9,47 +9,49 @@ A new root certificate is generated if this is the first time the user has start
 Two new files are created in the project directory: a bearclaw project file and a python script
 that connects to the bearclaw proxy RPC port and registers callbacks.
 
-The user defines what methodology they want to use. A methodology is an ordered list of tests
-to be performed. The purpose of the methodology is to keep the user organized and to track what
+The user defines what methodology they want to use. A methodology is an ordered list of scenarios
+to be tested. The purpose of the methodology is to keep the user organized and to track what
 still needs to be done.
 
-All testing in bearclaw is performed against a step in the methodology (referred to as a
-methodology node), a specific task assigned to that methodology node (e.g. a location in the
-sitemap), and a user-defined description of the specific test they are performing.
+All testing in bearclaw is performed against:
+
+1. A scenario
+2. If applicable, a target assigned to the scenario, such as a location in the sitemap
+3. A user-specified description of what they are testing
 
 For example:
 
-- Methodology node: Reflected cross-site scripting
-  - Assigned item: Endpoint at https://example.com/target1.php
+- Scenario: Reflected cross-site scripting
+  - Target: Endpoint at https://example.com/target1.php
     - Test: Look for reflected parameter values
     - Test: Determine if parameter 'foo' is vulnerable
-  - Assigned item: Endpoint at https://example.com/target2.php
+  - Target: Endpoint at https://example.com/target2.php
     - Test: Look for reflected parameter values
     - Test: Determine if parameter 'bar' is vulnerable
 
 The bearclaw UI offers to optionally create a new methodology based on the
 [OWASP WSTG](https://owasp.org/www-project-web-security-testing-guide/). The user can add or
-remove methodology nodes from the UI or from a python script. The methodology nodes form a tree.
+remove scenarios from the UI or from a python script. The scenarios form a tree.
 
-When adding a methodology node, the user specifies the type of testing that will be performed for
-that node. This determines what can be assigned to the node and its UI.
+When adding a scenario, the user specifies the type of testing that will be performed. This
+determines which targets can be assigned to the scenario and its UI.
 
 The options are:
 
 - *Location Testing*: A location is a directory or file on a server. Locations are assigned to the
-  node and testing is performed for each location.
+  scenario and testing is performed for each location.
 - *Endpoint Testing*: An endpoint is a location and possibly a set of parameter values that
   uniquely identify a single unit of server-side logic. An endpoint includes a list of parameters
-  that provide input to the logic. Endpoints are assigned to the node and testing is performed for
-  each endpoint.
-- *Authorization Testing*: Locations are assigned to the node. The user defines a list of roles and
-  testing is performed for each combination of assigned location and role.
-- *Business Logic Testing*: Endpoints are assigned to the node. The user groups endpoints into
+  that provide input to the logic. Endpoints are assigned to the scenario and testing is performed
+  for each endpoint.
+- *Authorization Testing*: Locations are assigned to the scenario. The user defines a list of roles
+  and testing is performed for each combination of assigned location and role.
+- *Business Logic Testing*: Endpoints are assigned to the scenario. The user groups endpoints into
   one or more ordered multi-step flows and performs testing on each flow as a unit.
-- *Generic Testing*: A single logical task. Nothing can be assigned to the node. Testing is
-  performed for the node.
-- *None*: The node is only used as a container in the methodology tree for child nodes. Nothing can
-  be assigned to the node. Testing cannot be performed for the node.
+- *Generic Testing*: A single logical task. Nothing can be assigned to the scenario. Testing is
+  performed for the scenario.
+- *None*: The scenario is only used as a container in the methodology tree for child scenarios.
+  Nothing can be assigned to the scenario. Testing cannot be performed for the scenario.
 
 The user opens the generated python script in their favorite editor and adds functionality
 to perform any of the following tasks on each request as it passes through the proxy:
@@ -127,35 +129,34 @@ for links.
 The user switches to the sitemap view. This shows each location in all in-scope targets in a tree.
 For each location in the sitemap, this shows the number of:
 
-- methodology nodes that the user needs to decide if it should be assigned to
-- methodology nodes it is assigned to but has not been completed
-- individual tests in all methodology nodes that have not been completed
+- scenarios that the user needs to decide if it should be assigned to
+- scenarios it is assigned to but has not been completed
+- individual tests in all scenarios that have not been completed
 - issues the user has identified
 
-For each location that has not been assigned, the user determines which, if any, methodology nodes
-it should be assigned to.
+For each location that has not been assigned, the user determines which, if any, scenarios it should
+be assigned to.
 
 The user switches to the endpoint list view. This displays the same information about endpoints
 that the sitemap view displays about locations. For each endpoint that has not been assigned, the
-user determines which, if any, methodology nodes it should be assigned to.
+user determines which, if any, scenarios it should be assigned to.
 
-The user switches to the methodology list view. This shows each methodology node and the number of:
+The user switches to the methodology list view. This shows each scenario and the number of:
 
 - recently discovered locations or endpoints that the user needs to assign or ignore
-- assigned items that have not been completed
+- assigned targets that have not been completed
 - individual tests that have not been completed
 - issues the user has identified
 
-The user drills down into a methodology node from this view.
+The user drills down into a scenario from this view.
 
-On the methodology detail view, the user sees a list of recently discovered locations or endpoints
-that can be assigned to the methodology node. They mark each one as either assigned or inapplicable.
+On the scenario view, the user sees a list of recently discovered locations or endpoints that can be
+assigned to the scenario. They mark each one as either assigned or inapplicable.
 
 Additionally, there is a list of items that the user can test. The layout of this screen depends
-on the type of testing the methodology node is configured for. The user can mark these items
-as complete or drill down into them. They cannot mark the item as complete if there are any
-incomplete tests for them. The user drills down into one of these items to enter the testing list
-view.
+on the type of testing the scenario is configured for. The user can mark these items as complete or
+drill down into them. They cannot mark the item as complete if there are any incomplete tests for
+them. The user drills down into one of these items to enter the testing list view.
 
 The testing list view asks the user to either create a new test by typing a description of the
 testing they intend to perform, or selecting a previously created test from a list. The list shows
@@ -197,10 +198,9 @@ created for that test. A single request can be assigned to multiple tests. This 
 intended to support the following scenarios:
 
 - Watching for strings inside requests that could indicate a vulnerability and assigning these
-  requests for manual review to the appropriate methodology node. For example, if a string
-  potentially indiciating a stack trace is found, a script could assign that request to a
-  test "possible stack traces found in responses" in the methodology node "Testing for Improper
-  Error Handling".
+  requests for manual review to the appropriate scenario. For example, if a string potentially
+  indiciating a stack trace is found, a script could assign that request to a test "possible stack
+  traces found in responses" in the scenario "Testing for Improper Error Handling".
 - Source / Sink analysis. For example, when testing for persistent cross-site scripting, a script
   could generate unique tags in payloads for each source endpoint. It could then watch all future
   responses for these unique tags. If it finds one, it can assign this request to a "Sink Analysis"
@@ -209,34 +209,31 @@ intended to support the following scenarios:
 After performing testing, the user can select requests and create issues from them.
 
 Additionally, the user can enter testing notes on a specific request, the testing detail view, and
-the methodology detail view.
+the scenario view.
 
 Once the user has reviewed and marked as complete all script-generated requests in the test, the
 user marks the test as complete and moves on to the next test. Once they have marked all tests
 as complete, they mark the assigned item as complete. When they have completed all assigned items
-for the methodology node, they move on to the next step in the methodology. The application keeps
-track of the number of open items assigned to the methodology node so the user does not need to
-manually mark them as complete. If any new requests, tests, or items are assigned to the
-methodology node, or new parameters are found for endpoints assigned to the methodology node, the
-application marks all relevent things as incomplete.
+for the scenario, they move on to the next scenario in the methodology. The application keeps
+track of the number of open items assigned to the scenario so the user does not need to manually
+mark them as complete. If any new requests, tests, or targets are assigned to the scenario, or new
+parameters are found for endpoints assigned to the scenario, the application marks all relevent
+things as incomplete.
 
 As the user continues to test the target application, new locations or endpoints may be identified.
-The application keeps track of these so the user doesn't forget to assign them to methodology
-nodes.
+The application keeps track of these so the user doesn't forget to assign them to scenarios.
 
 There are additional views the user can access to analyze the data collected by the proxy:
 
 - *Parameter view*: Explore the parameters seen by the application, their values, and where they
   occured.
-- *Testing view*: All incomplete tests accross all methodology nodes and assigned items.
+- *Testing view*: All incomplete tests accross all scenarios and assigned targets.
 - *Issue view*: All issues created by the user.
 - *Notes view*: Everything that the user has entered testing notes on.
 
 All views in the application support extensive sorting and filtering and allow the user to drill
 down into related data.
 
-Finally, the user can generate a report showing what was tested.
- 
 ## Architecture
 
 The application is written in [rust](https://doc.rust-lang.org/stable/book/). This is the language

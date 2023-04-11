@@ -396,11 +396,13 @@ impl RpcSpawner {
                         .build()
                         .unwrap();
                     let local = tokio::task::LocalSet::new();
+                    let death_notification_tx = death_notification_tx.clone();
 
                     tokio::task::Builder::new()
                         .name(&format!("rpc-spawner-tid{thread_id}"))
                         .spawn_local_on(
                             async move {
+                                let death_notification_tx = death_notification_tx.clone();
                                 tracing::trace!("waiting for capnp rpc spawn request");
 
                                 while let Ok((client_id, permit, stream)) = tokio::select! {
@@ -430,6 +432,7 @@ impl RpcSpawner {
                                             storage.clone(),
                                             proxy_command_tx.deref().clone(),
                                             shutdown_command_tx.deref().clone(),
+                                            shutdown_notification_rx.clone(),
                                             death_notification_tx.clone(),
                                             thread_id,
                                             client_id,
@@ -438,21 +441,23 @@ impl RpcSpawner {
                                         Box::new(network),
                                         Some(initial_object.client),
                                     );
-
+                                    let disconnector = rpc_system.get_disconnector();
                                     let mut shutdown_notification_rx =
                                         shutdown_notification_rx.clone();
+                                    let death_notification_tx = death_notification_tx.clone();
 
                                     tokio::task::Builder::new()
                                         .name(&format!("rpc-tid{thread_id}-cid{client_id}"))
                                         .spawn_local(async move {
+                                            let _death_notification_tx = death_notification_tx;
                                             tracing::trace!("executing capnp rpc system");
                                             let result = tokio::select! {
                                                 result = rpc_system => { result }
                                                 _ = shutdown_notification_rx.changed() => {
-                                                    // TODO: Is there a way to gracefully shut down
-                                                    // the rpc_system?
-                                                    tracing::trace!("shutting down");
-                                                    return Ok(());
+                                                    tracing::trace!(
+                                                        "Shutdown notification, awaiting RPC system disconnector"
+                                                    );
+                                                    disconnector.await
                                                 }
                                             };
                                             drop(permit);

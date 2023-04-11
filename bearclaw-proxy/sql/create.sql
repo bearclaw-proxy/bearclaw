@@ -1,50 +1,54 @@
 -- Table and index creation
-      
-CREATE TABLE methodology (
-    methodology_id           INTEGER PRIMARY KEY NOT NULL,
-    parent_id                INTEGER NULL,
-    position                 INTEGER NOT NULL,
-    methodology_type_enum_id INTEGER NOT NULL,
-    description              TEXT    NOT NULL,
-    date_created             INTEGER NOT NULL,
-    date_modified            INTEGER NOT NULL,
+
+CREATE TABLE scenario (
+    scenario_id           INTEGER PRIMARY KEY NOT NULL,
+    parent_id             INTEGER NULL,
+    position              INTEGER NOT NULL,
+    scenario_type_enum_id INTEGER NOT NULL,
+    user_defined_id       TEXT    UNIQUE NOT NULL,
+    description           TEXT    NOT NULL,
+    date_created          INTEGER NOT NULL,
+    date_modified_secs    INTEGER NOT NULL,
+    date_modified_nsecs   INTEGER NOT NULL,
     UNIQUE (parent_id, position),
     FOREIGN KEY (parent_id)
-    REFERENCES methodology (methodology_id),
-    FOREIGN KEY (methodology_type_enum_id)
-    REFERENCES methodology_type_enum (methodology_type_enum_id)
+    REFERENCES scenario (scenario_id),
+    FOREIGN KEY (scenario_type_enum_id)
+    REFERENCES scenario_type_enum (scenario_type_enum_id)
 ) STRICT;
 
-CREATE TABLE methodology_type_enum (
-    methodology_type_enum_id INTEGER PRIMARY KEY NOT NULL,
-    description              TEXT    UNIQUE NOT NULL
+CREATE TABLE scenario_type_enum (
+    scenario_type_enum_id INTEGER PRIMARY KEY NOT NULL,
+    description           TEXT    UNIQUE NOT NULL
 ) STRICT;
 
 CREATE TABLE generic_test (
-    methodology_id INTEGER NOT NULL,
-    test_id        INTEGER UNIQUE NOT NULL,
-    PRIMARY KEY (methodology_id, test_id),
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id),
+    scenario_id INTEGER NOT NULL,
+    test_id     INTEGER UNIQUE NOT NULL,
+    PRIMARY KEY (scenario_id, test_id),
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id),
     FOREIGN KEY (test_id)
     REFERENCES test (test_id)
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE test (
-    test_id       INTEGER PRIMARY KEY NOT NULL,
-    date_created  INTEGER NOT NULL,
-    date_modified INTEGER NOT NULL,
-    description   TEXT    NOT NULL,
-    is_done       INTEGER NOT NULL DEFAULT FALSE
+    test_id             INTEGER PRIMARY KEY NOT NULL,
+    date_created        INTEGER NOT NULL,
+    date_modified_secs  INTEGER NOT NULL,
+    date_modified_nsecs INTEGER NOT NULL,
+    description         TEXT    NOT NULL,
+    is_done             INTEGER NOT NULL DEFAULT FALSE
 ) STRICT;
 
-CREATE TABLE methodology_location (
-    methodology_id            INTEGER NOT NULL,
+CREATE TABLE scenario_location (
+    scenario_id               INTEGER NOT NULL,
     location_id               INTEGER NOT NULL,
     assignment_status_enum_id INTEGER NOT NULL,
-    PRIMARY KEY (methodology_id, location_id),
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id),
+    PRIMARY KEY (scenario_id, location_id),
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id)
+    ON DELETE CASCADE,
     FOREIGN KEY (location_id)
     REFERENCES location (location_id),
     FOREIGN KEY (assignment_status_enum_id)
@@ -65,25 +69,26 @@ CREATE TABLE assignment_status_enum (
 ) STRICT;
 
 CREATE TABLE location_test (
-    methodology_id INTEGER NOT NULL,
+    scenario_id    INTEGER NOT NULL,
     location_id    INTEGER NOT NULL,
     test_id        INTEGER UNIQUE NOT NULL,
-    PRIMARY KEY (methodology_id, location_id, test_id),
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id),
+    PRIMARY KEY (scenario_id, location_id, test_id),
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id),
     FOREIGN KEY (location_id)
     REFERENCES location (location_id),
     FOREIGN KEY (test_id)
     REFERENCES test (test_id)
 ) STRICT, WITHOUT ROWID;
 
-CREATE TABLE methodology_endpoint (
-    methodology_id            INTEGER NOT NULL,
+CREATE TABLE scenario_endpoint (
+    scenario_id               INTEGER NOT NULL,
     endpoint_id               INTEGER NOT NULL,
     assignment_status_enum_id INTEGER NOT NULL,
-    PRIMARY KEY (methodology_id, endpoint_id),
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id),
+    PRIMARY KEY (scenario_id, endpoint_id),
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id)
+    ON DELETE CASCADE,
     FOREIGN KEY (endpoint_id)
     REFERENCES endpoint (endpoint_id),
     FOREIGN KEY (assignment_status_enum_id)
@@ -162,33 +167,35 @@ CREATE TABLE endpoint_parameter_value (
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE endpoint_test (
-    methodology_id INTEGER NOT NULL,
+    scenario_id    INTEGER NOT NULL,
     endpoint_id    INTEGER NOT NULL,
     test_id        INTEGER UNIQUE NOT NULL,
-    PRIMARY KEY (methodology_id, endpoint_id, test_id),
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id),
+    PRIMARY KEY (scenario_id, endpoint_id, test_id),
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id),
     FOREIGN KEY (endpoint_id)
     REFERENCES endpoint (endpoint_id),
     FOREIGN KEY (test_id)
     REFERENCES test (test_id)
 ) STRICT, WITHOUT ROWID;
 
-CREATE TABLE methodology_role (
-    methodology_role_id INTEGER PRIMARY KEY NOT NULL,
-    methodology_id      INTEGER NOT NULL,
-    description         TEXT    NOT NULL,
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id)
+CREATE TABLE scenario_role (
+    scenario_role_id INTEGER PRIMARY KEY NOT NULL,
+    scenario_id      INTEGER NOT NULL,
+    description      TEXT    NOT NULL,
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id)
+    ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE authorization_status (
-    methodology_role_id          INTEGER NOT NULL,
+    scenario_role_id             INTEGER NOT NULL,
     location_id                  INTEGER NOT NULL,
     authorization_status_enum_id INTEGER NOT NULL,
-    PRIMARY KEY (methodology_role_id, location_id),
-    FOREIGN KEY (methodology_role_id)
-    REFERENCES methodology_role (methodology_role_id),
+    PRIMARY KEY (scenario_role_id, location_id),
+    FOREIGN KEY (scenario_role_id)
+    REFERENCES scenario_role (scenario_role_id)
+    ON DELETE CASCADE,
     FOREIGN KEY (location_id)
     REFERENCES location (location_id),
     FOREIGN KEY (authorization_status_enum_id)
@@ -201,43 +208,46 @@ CREATE TABLE authorization_status_enum (
 ) STRICT;
 
 CREATE TABLE authorization_test (
-    methodology_role_id INTEGER NOT NULL,
-    location_id         INTEGER NOT NULL,
-    test_id             INTEGER UNIQUE NOT NULL,
-    PRIMARY KEY (methodology_role_id, location_id, test_id),
-    FOREIGN KEY (methodology_role_id)
-    REFERENCES methodology_role (methodology_role_id),
+    scenario_role_id INTEGER NOT NULL,
+    location_id      INTEGER NOT NULL,
+    test_id          INTEGER UNIQUE NOT NULL,
+    PRIMARY KEY (scenario_role_id, location_id, test_id),
+    FOREIGN KEY (scenario_role_id)
+    REFERENCES scenario_role (scenario_role_id)
+    ON DELETE CASCADE,
     FOREIGN KEY (location_id)
     REFERENCES location (location_id),
     FOREIGN KEY (test_id)
     REFERENCES test (test_id)
 ) STRICT, WITHOUT ROWID;
 
-CREATE TABLE methodology_flow (
-    methodology_flow_id INTEGER PRIMARY KEY NOT NULL,
-    methodology_id      INTEGER NOT NULL,
-    description         TEXT    NOT NULL,
-    is_done             INTEGER NOT NULL DEFAULT FALSE,
-    FOREIGN KEY (methodology_id)
-    REFERENCES methodology (methodology_id)
+CREATE TABLE scenario_flow (
+    scenario_flow_id INTEGER PRIMARY KEY NOT NULL,
+    scenario_id      INTEGER NOT NULL,
+    description      TEXT    NOT NULL,
+    is_done          INTEGER NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (scenario_id)
+    REFERENCES scenario (scenario_id)
+    ON DELETE CASCADE
 ) STRICT;
 
-CREATE TABLE methodology_flow_endpoint (
-    methodology_flow_id INTEGER NOT NULL,
-    endpoint_id         INTEGER NOT NULL,
-    PRIMARY KEY (methodology_flow_id, endpoint_id),
-    FOREIGN KEY (methodology_flow_id)
-    REFERENCES methodology_flow (methodology_flow_id),
+CREATE TABLE scenario_flow_endpoint (
+    scenario_flow_id INTEGER NOT NULL,
+    endpoint_id      INTEGER NOT NULL,
+    PRIMARY KEY (scenario_flow_id, endpoint_id),
+    FOREIGN KEY (scenario_flow_id)
+    REFERENCES scenario_flow (scenario_flow_id)
+    ON DELETE CASCADE,
     FOREIGN KEY (endpoint_id)
     REFERENCES endpoint (endpoint_id)
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE business_logic_test (
-    methodology_flow_id INTEGER NOT NULL,
-    test_id             INTEGER UNIQUE NOT NULL,
-    PRIMARY KEY (methodology_flow_id, test_id),
-    FOREIGN KEY (methodology_flow_id)
-    REFERENCES methodology_flow (methodology_flow_id),
+    scenario_flow_id INTEGER NOT NULL,
+    test_id          INTEGER UNIQUE NOT NULL,
+    PRIMARY KEY (scenario_flow_id, test_id),
+    FOREIGN KEY (scenario_flow_id)
+    REFERENCES scenario_flow (scenario_flow_id),
     FOREIGN KEY (test_id)
     REFERENCES test (test_id)
 ) STRICT, WITHOUT ROWID;
@@ -261,23 +271,23 @@ CREATE TABLE history (
 ) STRICT;
 
 CREATE TABLE http_history (
-    http_history_id        INTEGER PRIMARY KEY NOT NULL,
-    connection_info_id     INTEGER NOT NULL,
+    http_history_id     INTEGER PRIMARY KEY NOT NULL,
+    connection_info_id  INTEGER NOT NULL,
     -- Split out the first two lines of the http request header since it is uncompressible and
     -- has little chance of being deduplicated, while the rest of the header has a high chance
     -- of being deduplicated. TODO: Just parse these first two lines and store them in SQL
     -- directly, since there's very little storage cost to doing this and as a benefit we can
     -- directly query against this data. It would probably make sense to do this with the first
     -- line of the response header too.
-    request_location_id    INTEGER NOT NULL,
-    request_header_id      INTEGER NOT NULL,
+    request_location_id INTEGER NOT NULL,
+    request_header_id   INTEGER NOT NULL,
     -- request_body_id is stored in a different table since it is usually omitted
-    response_date_secs     INTEGER NOT NULL,
-    response_date_nsecs    INTEGER NOT NULL,
-    response_header_id     INTEGER NOT NULL,
+    response_date_secs  INTEGER NOT NULL,
+    response_date_nsecs INTEGER NOT NULL,
+    response_header_id  INTEGER NOT NULL,
     -- The response body is usually present so we optimize for this case. If it's not present
     -- this field will reference a content record that decompresses into the empty string.
-    response_body_id       INTEGER NOT NULL,
+    response_body_id    INTEGER NOT NULL,
     FOREIGN KEY (http_history_id)
     REFERENCES history (history_id),
     FOREIGN KEY (connection_info_id)
@@ -317,24 +327,22 @@ CREATE TABLE content (
 CREATE UNIQUE INDEX idx_content_hash ON content (hash);
 
 CREATE TABLE http_history_request_body (
-    http_history_id INTEGER NOT NULL,
+    http_history_id INTEGER PRIMARY KEY NOT NULL,
     request_body_id INTEGER NOT NULL,
-    PRIMARY KEY (http_history_id, request_body_id),
     FOREIGN KEY (http_history_id)
     REFERENCES http_history (http_history_id),
     FOREIGN KEY (request_body_id)
     REFERENCES content (content_id)
-) STRICT, WITHOUT ROWID;
+) STRICT;
 
 CREATE TABLE http_error (
-    http_history_id    INTEGER NOT NULL,
+    http_history_id    INTEGER PRIMARY KEY NOT NULL,
     http_error_enum_id INTEGER NOT NULL,
-    PRIMARY KEY (http_history_id, http_error_enum_id),
     FOREIGN KEY (http_history_id)
     REFERENCES http_history (http_history_id),
     FOREIGN KEY (http_error_enum_id)
     REFERENCES http_error_enum (http_error_enum_id)
-) STRICT, WITHOUT ROWID;
+) STRICT;
 
 CREATE TABLE http_error_enum (
     http_error_enum_id INTEGER PRIMARY KEY NOT NULL,
@@ -393,7 +401,7 @@ CREATE TABLE websocket_direction_enum (
 -- These must be manually kept in sync with rust code
 
 INSERT INTO
-    methodology_type_enum
+    scenario_type_enum
 VALUES
     (1, 'Unassigned Proxy Traffic'),
     (2, 'Container'),
@@ -464,27 +472,30 @@ VALUES
 -- Special Values
 
 INSERT INTO
-    methodology
+    scenario
 (
-    methodology_id,
+    scenario_id,
     parent_id,
     position,
-    methodology_type_enum_id,
+    scenario_type_enum_id,
+    user_defined_id,
     description,
     date_created,
-    date_modified                
+    date_modified_secs,
+    date_modified_nsecs                
 )
 VALUES
-    (1, NULL, 0, 1, "Unassigned Proxy Traffic", 0, 0);    
+    (1, NULL, 1, 1, "", "Unassigned Proxy Traffic", 0, 0, 0);    
 
 INSERT INTO
     test
 (
     test_id,
     date_created,
-    date_modified,
+    date_modified_secs,
+    date_modified_nsecs,
     description,
     is_done    
 )
 VALUES
-    (1, 0, 0, "Unassigned Proxy Traffic", FALSE);    
+    (1, 0, 0, 0, "Unassigned Proxy Traffic", FALSE);    
