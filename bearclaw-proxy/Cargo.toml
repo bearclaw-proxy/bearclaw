@@ -9,8 +9,8 @@ edition = "2021"
 async-channel = "1"
 blake3 = "1"
 bytes = "1"
-capnp = { version = "0.15" }
-capnp-rpc = { version = "0.15" }
+capnp = { version = "0.16.1" }
+capnp-rpc = { version = "0.16.1" }
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console-subscriber = "0.1"
@@ -28,5 +28,5 @@ winnow = "0.3"
 zstd = { version = "0.12", features = ["pkg-config"] }
 
 [build-dependencies]
-capnpc = "0.15"
+capnpc = "0.16.1"
 vergen = { version = "7", features = ["build", "cargo", "git", "rustc"] }

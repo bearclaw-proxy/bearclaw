@@ -327,7 +327,7 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
                 .unwrap()
                 .unwrap();
 
-            let out_items = results.get().init_items(items.len() as u32);
+            let mut out_items = results.get().init_items(items.len() as u32);
             // is there a better way to do this?
             let mut builder =
                 capnp_rpc::ImbuedMessageBuilder::new(capnp::message::HeapAllocator::new());
