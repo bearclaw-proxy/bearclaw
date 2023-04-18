@@ -50,6 +50,16 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }));
 
+    if std::env::args().any(|x| x == "--contributors") {
+        print_contributors();
+        return Ok(());
+    }
+
+    if std::env::args().any(|x| x == "--third-party-licenses") {
+        print_third_party_licenses();
+        return Ok(());
+    }
+
     console_subscriber::init();
     trace_version();
 
@@ -238,6 +248,17 @@ impl From<Box<dyn Any + std::marker::Send>> for Error {
     }
 }
 
+fn print_contributors() {
+    println!("{}", include_str!("../../CONTRIBUTORS"));
+}
+
+fn print_third_party_licenses() {
+    println!(
+        "{}",
+        include_str!(concat!(env!("OUT_DIR"), "/licenses.txt"))
+    );
+}
+
 fn trace_version() {
     let dirty_build = git_version::git_version!().contains("-modified");
 
@@ -269,7 +290,7 @@ fn trace_version() {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(version, about, long_about = None)]
 struct Args {
     /// Bootstrap proxy plugin endpoint to connect to. THIS IS NOT ENCRYPTED!
     #[clap(short, long)]
@@ -282,6 +303,14 @@ struct Args {
     /// Path to project file. A new file is created if it does not exist.
     #[clap(short, long)]
     project_file: PathBuf,
+
+    /// Print contributors to this application
+    #[clap(long)]
+    contributors: bool,
+
+    /// Print information about third-party code used by this application
+    #[clap(long)]
+    third_party_licenses: bool,
 }
 
 async fn proxy_task(

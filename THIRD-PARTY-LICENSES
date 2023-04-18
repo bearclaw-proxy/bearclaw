@@ -1,0 +1,29 @@
+This project uses the following third-party dynamic libraries
+(in alphabetical order):
+
+Gtk4
+	Copyright (c) 1997-2023, The GTK Team
+	All rights reserved.
+	License: LGPL-2.1-or-later
+	https://gtk.org
+
+GtkSourceView5
+	Authors: The GtkSourceView Authors
+	License: LGPL-2.1-or-later
+	https://gnome.pages.gitlab.gnome.org/gtksourceview/
+
+OpenSSL
+	Copyright (c) 1998-2022 The OpenSSL Project
+	Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson
+	All rights reserved.
+	License: Apache-2.0
+	https://www.openssl.org
+
+Sqlite3
+	Public Domain Software
+	https://sqlite.org
+
+Zstd
+	Copryright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+	License: BSD-3-Clause
+	https://github.com/facebook/zstd

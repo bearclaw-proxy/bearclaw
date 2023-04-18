@@ -62,6 +62,8 @@ what is still left to do. Finally, it should allow me to explore all the things 
 ### Compile-time only
 
 - Capnproto (capnpc binary)
+- Cargo-license
+  - `cargo install cargo-license`
 - Git
 - libgit2
 - Rust
@@ -73,7 +75,19 @@ what is still left to do. Finally, it should allow me to explore all the things 
 
 ## Build Instructions
 
-cargo build
+After installing the dependencies, cloning this repository, and entering its directory in a shell:
+
+```sh
+cargo build --release
+```
+
+## Installation Instructions
+
+After installing the dependencies, cloning this repository, and entering its directory in a shell:
+
+```sh
+cargo install --locked --path bearclaw-proxy
+```
 
 ## How to Run
 
