@@ -77,7 +77,7 @@ fn main() {
 
         writeln!(
             out,
-            "This project uses the following third-party static libraries"
+            "This project uses the following third-party static-link libraries"
         )
         .unwrap();
         writeln!(out, "(in alphabetical order):").unwrap();

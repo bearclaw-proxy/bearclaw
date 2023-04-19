@@ -1,5 +1,6 @@
 [package]
 name = "bearclaw-proxy"
+description = "An intercepting proxy for user-scripted, methodology-driven manual web application security testing"
 version = "0.1.0"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/bearclaw-proxy/bearclaw"
