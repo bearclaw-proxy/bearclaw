@@ -26,6 +26,7 @@ const BROADCAST_CHANNEL_CAPACITY: usize = 128;
 pub(super) struct Database {
     db: rusqlite::Connection,
     storage_stats: StorageStats,
+    history_update_tx: tokio::sync::watch::Sender<()>,
     methodology_update_tx: tokio::sync::watch::Sender<()>,
     scenario_update_tx: tokio::sync::broadcast::Sender<ScenarioId>,
 }
@@ -60,12 +61,14 @@ impl Database {
             }
         };
 
+        let (history_update_tx, _) = tokio::sync::watch::channel(());
         let (methodology_update_tx, _) = tokio::sync::watch::channel(());
         let (scenario_update_tx, _) = tokio::sync::broadcast::channel(BROADCAST_CHANNEL_CAPACITY);
 
         Ok(Self {
             db,
             storage_stats: Default::default(),
+            history_update_tx,
             methodology_update_tx,
             scenario_update_tx,
         })
@@ -113,6 +116,13 @@ impl Database {
                     reply,
                 } => {
                     let result = self.get_history_search_count(history_search_id).unwrap();
+                    reply.send(result).map_err(|_| RunError::Channel)?;
+                }
+                Command::SubscribeHistorySearch {
+                    history_search_id,
+                    reply,
+                } => {
+                    let result = self.subscribe_history_search(history_search_id).unwrap();
                     reply.send(result).map_err(|_| RunError::Channel)?;
                 }
                 Command::DeleteHistorySearch {
@@ -377,6 +387,9 @@ impl Database {
 
         txn.commit()?;
 
+        // It's ok for this to return an error if there are no subscribers
+        let _ = self.history_update_tx.send(());
+
         tracing::debug!(storage_stats.bytes_total);
         tracing::debug!(storage_stats.bytes_deduplicated);
         tracing::debug!(storage_stats.bytes_stored);
@@ -560,6 +573,14 @@ impl Database {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
+    fn subscribe_history_search(
+        &self,
+        _history_search_id: HistorySearchId,
+    ) -> RunResult<tokio::sync::watch::Receiver<()>> {
+        Ok(self.history_update_tx.subscribe())
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
     fn delete_history_search(
         &mut self,
         _history_search_id: HistorySearchId,
@@ -579,6 +600,7 @@ impl Database {
         Ok(result)
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn create_scenario(
         &mut self,
         parent_id: Option<ScenarioId>,
@@ -691,6 +713,7 @@ impl Database {
         Ok(Ok(ScenarioId(scenario_id)))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn lookup_scenario(&mut self, user_defined_id: String) -> RunResult<LookupResult<ScenarioId>> {
         let txn = self.db.transaction()?;
 
@@ -713,6 +736,7 @@ impl Database {
         Ok(result)
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn move_scenario_before(
         &mut self,
         move_scenario_id: ScenarioId,
@@ -876,6 +900,7 @@ impl Database {
         Ok(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn move_scenario_after(
         &mut self,
         move_scenario_id: ScenarioId,
@@ -1039,6 +1064,7 @@ impl Database {
         Ok(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn move_scenario_inside(
         &mut self,
         move_scenario_id: ScenarioId,
@@ -1187,6 +1213,7 @@ impl Database {
         Ok(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn delete_scenario(
         &mut self,
         scenario_id: ScenarioId,
@@ -1207,6 +1234,7 @@ impl Database {
         result
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn get_scenario_info(
         &mut self,
         scenario_id: ScenarioId,
@@ -1243,6 +1271,7 @@ impl Database {
         Ok(Ok(scenario_info))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn update_scenario_info(
         &mut self,
         scenario_id: ScenarioId,
@@ -1338,10 +1367,12 @@ impl Database {
         Ok(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn subscribe_scenario(&self) -> RunResult<tokio::sync::broadcast::Receiver<ScenarioId>> {
         Ok(self.scenario_update_tx.subscribe())
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     fn subscribe_methodology(&self) -> RunResult<tokio::sync::watch::Receiver<()>> {
         Ok(self.methodology_update_tx.subscribe())
     }
@@ -1430,6 +1461,10 @@ pub(crate) enum Command {
     GetHistorySearchCount {
         history_search_id: HistorySearchId,
         reply: tokio::sync::oneshot::Sender<LookupResult<u32>>,
+    },
+    SubscribeHistorySearch {
+        history_search_id: HistorySearchId,
+        reply: tokio::sync::oneshot::Sender<tokio::sync::watch::Receiver<()>>,
     },
     DeleteHistorySearch {
         history_search_id: HistorySearchId,
@@ -2136,6 +2171,20 @@ impl Channel {
         let (reply, reply_rx) = tokio::sync::oneshot::channel();
         self.storage_tx
             .send(Command::GetHistorySearchCount {
+                history_search_id,
+                reply,
+            })
+            .await?;
+        reply_rx.await.map_err(|e| e.into())
+    }
+
+    pub(crate) async fn subscribe_history_search(
+        &self,
+        history_search_id: HistorySearchId,
+    ) -> ChannelResult<tokio::sync::watch::Receiver<()>> {
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        self.storage_tx
+            .send(Command::SubscribeHistorySearch {
                 history_search_id,
                 reply,
             })

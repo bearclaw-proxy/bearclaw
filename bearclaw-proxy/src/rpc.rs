@@ -33,7 +33,6 @@ const MAX_SCENARIO_OBJECTS_PER_RPC_CONNECTION: usize = 128;
 pub(super) struct BearclawImpl {
     bootstrap_proxy_endpoint: Arc<String>,
     storage: crate::storage::Channel,
-    proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
     shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
     shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
     death_notification_tx: tokio::sync::mpsc::Sender<()>,
@@ -53,7 +52,6 @@ impl BearclawImpl {
     pub(super) fn new(
         bootstrap_proxy_endpoint: Arc<String>,
         storage: crate::storage::Channel,
-        proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
         shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
         shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
         death_notification_tx: tokio::sync::mpsc::Sender<()>,
@@ -63,7 +61,6 @@ impl BearclawImpl {
         Self {
             bootstrap_proxy_endpoint,
             storage,
-            proxy_command_tx,
             shutdown_command_tx,
             shutdown_notification_rx,
             death_notification_tx,
@@ -142,7 +139,6 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         tracing::debug!(num_active_searches = self.num_active_searches.get());
 
         let storage = self.storage.clone();
-        let proxy_command_tx = self.proxy_command_tx.clone();
         let num_active_searches = self.num_active_searches.clone();
         let num_active_subscriptions = self.num_active_subscriptions.clone();
         let num_total_subscriptions = self.num_total_subscriptions.clone();
@@ -157,7 +153,6 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
             let history_search = capnp_rpc::new_client(HistorySearchImpl {
                 history_search_id,
                 storage,
-                proxy_command_tx,
                 num_active_searches,
                 num_active_subscriptions,
                 num_total_subscriptions,
@@ -492,7 +487,6 @@ impl Drop for BearclawImpl {
 struct HistorySearchImpl {
     history_search_id: crate::storage::HistorySearchId,
     storage: crate::storage::Channel,
-    proxy_command_tx: tokio::sync::mpsc::Sender<crate::ProxyCommand>,
     num_active_searches: Rc<Cell<usize>>,
     num_active_subscriptions: Rc<Cell<usize>>,
     num_total_subscriptions: Rc<Cell<usize>>,
@@ -566,7 +560,8 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
         params: bearclaw_capnp::history_search::SubscribeParams,
         mut results: bearclaw_capnp::history_search::SubscribeResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let proxy_command_tx = self.proxy_command_tx.clone();
+        let storage = self.storage.clone();
+        let history_search_id = self.history_search_id;
         let subscriber = pry!(pry!(params.get()).get_subscriber());
         let num_active_subscriptions = self.num_active_subscriptions.clone();
         let num_total_subscriptions = self.num_total_subscriptions.clone();
@@ -576,12 +571,10 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
         let death_notification_tx = self.death_notification_tx.clone();
 
         Promise::from_future(async move {
-            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-            proxy_command_tx
-                .send(crate::ProxyCommand::Subscribe(reply_tx))
+            let history_update_rx = storage
+                .subscribe_history_search(history_search_id)
                 .await
                 .unwrap();
-            let interceptor_rx = reply_rx.await.unwrap();
 
             if num_active_subscriptions.get() >= MAX_SUBSCRIPTION_OBJECTS_PER_RPC_CONNECTION {
                 tracing::warn!(
@@ -603,7 +596,7 @@ impl bearclaw_capnp::history_search::Server for HistorySearchImpl {
             tracing::debug!(num_active_subscriptions = num_active_subscriptions.get());
 
             let subscription = HistorySubscriptionImpl::new(
-                interceptor_rx,
+                history_update_rx,
                 subscriber,
                 num_active_subscriptions,
                 thread_id,
@@ -656,7 +649,7 @@ struct HistorySubscriptionImpl {
 
 impl HistorySubscriptionImpl {
     fn new(
-        mut interceptor_rx: tokio::sync::broadcast::Receiver<crate::storage::HistoryId>,
+        mut history_update_rx: tokio::sync::watch::Receiver<()>,
         subscriber: bearclaw_capnp::history_subscriber::Client,
         num_active_subscriptions: Rc<Cell<usize>>,
         thread_id: usize,
@@ -674,20 +667,8 @@ impl HistorySubscriptionImpl {
                 let _death_notification_tx = death_notification_tx;
                 loop {
                     tokio::select!(
-                        history_id = interceptor_rx.recv() => {
-                            if let Err(tokio::sync::broadcast::error::RecvError::Closed) = history_id {
-                                // TODO: This should panic once the proxy channel is moved to the
-                                // storage thread
-                                tracing::trace!("Proxy channel closed, shutting down");
-                                return;
-                            }
-
-                            if let Err(tokio::sync::broadcast::error::RecvError::Lagged(amount)) = history_id {
-                                tracing::warn!("History subscription lagged and missed {amount} messages");
-                                continue;
-                            }
-
-                            history_id.unwrap();
+                        result = history_update_rx.changed() => {
+                            result.unwrap();
 
                             tracing::trace!("Performing subscriber callback for new proxy history item");
                             let request = subscriber.notify_new_item_request();
@@ -701,6 +682,8 @@ impl HistorySubscriptionImpl {
                             tracing::trace!("Containing object dropped by client");
                             return;
                         }
+                        // TODO: I don't understand why this is necessary. If this isn't here
+                        // neither the scenario nor the subscription gets dropped on exit.
                         _ = shutdown_notification_rx.changed() => {
                             tracing::trace!("Exiting due to application shutdown");
                             return;
@@ -1423,7 +1406,9 @@ impl MethodologySubscriptionImpl {
                 let _death_notification_tx = death_notification_tx;
                 loop {
                     tokio::select!(
-                        _ = methodology_update_rx.changed() => {
+                        result = methodology_update_rx.changed() => {
+                            result.unwrap();
+
                             let request = subscriber.notify_scenario_tree_changed_request();
 
                             tracing::trace!("Performing subscriber callback for methodology update");

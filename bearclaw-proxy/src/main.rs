@@ -17,16 +17,6 @@ use futures::AsyncReadExt;
 /// TODO: Value chosen arbitrarily. This should be configurable by the end user.
 const MAX_CONCURRENT_RPC_CONNECTIONS: usize = 64;
 
-/// Maximum number of messages that can be queued in the proxy intercepted message notification
-/// channel. If a receiver cannot process messages fast enough it will receive an error and fail.
-/// TODO: Value chosen arbitrarily.
-const PROXY_BROADCAST_CHANNEL_CAPACITY: usize = 16;
-
-/// Maximum number of messages that can be queued in the proxy command channel. If the channel is
-/// full, senders will block until the receiver catches up.
-/// TODO: Value chosen arbitrarily.
-const PROXY_COMMAND_CHANNEL_CAPACITY: usize = 2;
-
 /// Start sending keepalive probes after this duration of idleness
 const RPC_SOCKET_KEEPALIVE_TIME: Duration = Duration::from_secs(60);
 
@@ -92,19 +82,10 @@ async fn main() -> Result<()> {
         tokio::sync::watch::channel::<()>(());
 
     tracing::info!("Running proxy interceptor");
-    let (interceptor_tx, interceptor_rx) =
-        tokio::sync::broadcast::channel(PROXY_BROADCAST_CHANNEL_CAPACITY);
-    // subscriptions will be created from the tx side
-    drop(interceptor_rx);
-    let (proxy_command_tx, proxy_command_rx) =
-        tokio::sync::mpsc::channel(PROXY_COMMAND_CHANNEL_CAPACITY);
-
     tokio::task::Builder::new()
         .name("proxy-inteceptor")
         .spawn(proxy_task(
             interceptor,
-            proxy_command_rx,
-            interceptor_tx,
             storage_channel.clone(),
             shutdown_notification_rx.clone(),
             death_notification_tx.clone(),
@@ -116,7 +97,6 @@ async fn main() -> Result<()> {
     let rpc_spawner = RpcSpawner::new(
         Arc::new(args.bootstrap_proxy_endpoint),
         storage_channel,
-        Arc::new(proxy_command_tx),
         Arc::new(shutdown_command_tx),
         shutdown_notification_rx.clone(),
         death_notification_tx.clone(),
@@ -315,70 +295,39 @@ struct Args {
 
 async fn proxy_task(
     mut interceptor: bootstrap_proxy::Interceptor,
-    mut command_rx: tokio::sync::mpsc::Receiver<ProxyCommand>,
-    broadcast_tx: tokio::sync::broadcast::Sender<storage::HistoryId>,
     storage_channel: storage::Channel,
     mut shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
     _death_notification_tx: tokio::sync::mpsc::Sender<()>,
 ) -> Result<()> {
     loop {
-        let intercept = interceptor.intercept();
-        tokio::pin!(intercept);
+        tokio::select! {
+            message = interceptor.intercept() => {
+                let message = message?;
+                let response = if message.response.is_empty() {
+                    Err(storage::HttpError::CouldNotConnect)
+                } else {
+                    Ok(message.response)
+                };
 
-        loop {
-            tokio::select! {
-                msg = command_rx.recv() => {
-                    match msg {
-                        Some(ProxyCommand::Subscribe(reply_tx)) => {
-                            let _ = reply_tx.send(broadcast_tx.subscribe());
-                        }
-                        None => {
-                            tracing::debug!("exiting due to command channel receive failure");
-                            return Err(Error::Channel);
-                        }
-                    }
-
-                    // Restart the inner loop. This will continue awaiting the same call to
-                    // `interceptor.intercept()` so we don't miss a message.
-                }
-                message = &mut intercept => {
-                    let message = message?;
-                    let response = if message.response.is_empty() {
-                        Err(storage::HttpError::CouldNotConnect)
-                    } else {
-                        Ok(message.response)
-                    };
-                    let id = storage_channel.store_http_history(
-                        None,
-                        storage::HttpMessage {
-                            request_time: message.received_at,
-                            response_time: message.received_at,
-                            host: message.host,
-                            port: message.port,
-                            is_https: message.is_https,
-                            request: message.request,
-                            response,
-                        },
-                    ).await?;
-                    // It's OK for this to return an error if there are no subscribers
-                    let _ = broadcast_tx.send(id);
-
-                    // Exit the inner loop and restart the outer loop. This will create a fresh
-                    // call to `interceptor.intercept()`
-                    break;
-                }
-                _ = shutdown_notification_rx.changed() => {
-                    tracing::trace!("shutting down");
-                    return Ok(());
-                }
+                storage_channel.store_http_history(
+                    None,
+                    storage::HttpMessage {
+                        request_time: message.received_at,
+                        response_time: message.received_at,
+                        host: message.host,
+                        port: message.port,
+                        is_https: message.is_https,
+                        request: message.request,
+                        response,
+                    },
+                ).await.unwrap();
+            }
+            _ = shutdown_notification_rx.changed() => {
+                tracing::trace!("shutting down");
+                return Ok(());
             }
         }
     }
-}
-
-#[derive(Debug)]
-enum ProxyCommand {
-    Subscribe(tokio::sync::oneshot::Sender<tokio::sync::broadcast::Receiver<storage::HistoryId>>),
 }
 
 struct RpcSpawner {
@@ -395,7 +344,6 @@ impl RpcSpawner {
     fn new(
         bootstrap_proxy_endpoint: Arc<String>,
         storage: storage::Channel,
-        proxy_command_tx: Arc<tokio::sync::mpsc::Sender<ProxyCommand>>,
         shutdown_command_tx: Arc<tokio::sync::mpsc::Sender<()>>,
         shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
         death_notification_tx: tokio::sync::mpsc::Sender<()>,
@@ -407,7 +355,6 @@ impl RpcSpawner {
             let recv: async_channel::Receiver<SpawnerPayload> = recv.clone();
             let bootstrap_proxy_endpoint = bootstrap_proxy_endpoint.clone();
             let storage = storage.clone();
-            let proxy_command_tx = proxy_command_tx.clone();
             let shutdown_command_tx = shutdown_command_tx.clone();
             let mut shutdown_notification_rx = shutdown_notification_rx.clone();
             let death_notification_tx = death_notification_tx.clone();
@@ -459,7 +406,6 @@ impl RpcSpawner {
                                         capnp_rpc::new_client(rpc::BearclawImpl::new(
                                             bootstrap_proxy_endpoint.clone(),
                                             storage.clone(),
-                                            proxy_command_tx.deref().clone(),
                                             shutdown_command_tx.deref().clone(),
                                             shutdown_notification_rx.clone(),
                                             death_notification_tx.clone(),
