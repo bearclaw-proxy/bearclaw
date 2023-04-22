@@ -3,3 +3,9 @@
 members = [
   "bearclaw-proxy",
 ]
+
+[profile.dev.build-override]
+debug = true
+
+[profile.release.build-override]
+debug = true
