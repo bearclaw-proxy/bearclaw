@@ -130,8 +130,8 @@ async fn main() -> Result<()> {
             tracing::info!("Shutdown command received from RPC client");
         },
         result = &mut storage_thread_waiter => {
-            result???;
-            panic!("Storage thread unexpectedly stopped without returning an error");
+            result??;
+            panic!("Storage thread unexpectedly stopped");
         }
     }
 
@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
     let _ = death_notification_rx.recv().await;
 
     tracing::trace!("waiting for storage thread to shut down");
-    storage_thread_waiter.await???;
+    storage_thread_waiter.await??;
 
     tracing::trace!("Shutdown complete, goodbye world o7");
     Ok(())
@@ -156,7 +156,6 @@ enum Error {
     Channel,
     IOFailure(std::io::Error),
     OpenProjectFile(storage::OpenError),
-    StorageThread(storage::RunError),
     StorageChannel(storage::ChannelError),
     Join(tokio::task::JoinError),
     Other(Box<dyn Any + std::marker::Send>),
@@ -201,12 +200,6 @@ impl From<std::io::Error> for Error {
 impl From<storage::OpenError> for Error {
     fn from(e: storage::OpenError) -> Self {
         Self::OpenProjectFile(e)
-    }
-}
-
-impl From<storage::RunError> for Error {
-    fn from(e: storage::RunError) -> Self {
-        Self::StorageThread(e)
     }
 }
 

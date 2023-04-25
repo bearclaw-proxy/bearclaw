@@ -75,10 +75,7 @@ impl Database {
     }
 
     /// The storage message processing loop. It is intended to run in its own thread.
-    pub(super) fn run(
-        mut self,
-        mut storage_rx: tokio::sync::mpsc::Receiver<Command>,
-    ) -> RunResult<()> {
+    pub(super) fn run(mut self, mut storage_rx: tokio::sync::mpsc::Receiver<Command>) {
         // This will exit when all senders are destroyed
         while let Some(cmd) = storage_rx.blocking_recv() {
             match cmd {
@@ -87,18 +84,16 @@ impl Database {
                     http_message,
                     reply,
                 } => {
-                    let history_id = self.store_http_history(test_id, http_message).unwrap();
-                    reply
-                        .send(HistoryId(history_id))
-                        .map_err(|_| RunError::Channel)?;
+                    let history_id = self.store_http_history(test_id, http_message);
+                    reply.send(HistoryId(history_id)).unwrap();
                 }
                 Command::GetHttpHistory { history_id, reply } => {
-                    let http_message = self.get_http_history(history_id).unwrap();
-                    reply.send(http_message).map_err(|_| RunError::Channel)?;
+                    let http_message = self.get_http_history(history_id);
+                    reply.send(http_message).unwrap();
                 }
                 Command::CreateHistorySearch { reply } => {
-                    let result = self.create_history_search().unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.create_history_search();
+                    reply.send(result).unwrap();
                 }
                 Command::GetHistorySearchItems {
                     history_search_id,
@@ -106,35 +101,34 @@ impl Database {
                     count,
                     reply,
                 } => {
-                    let result = self
-                        .get_history_search_items(history_search_id, start_index, count)
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result =
+                        self.get_history_search_items(history_search_id, start_index, count);
+                    reply.send(result).unwrap();
                 }
                 Command::GetHistorySearchCount {
                     history_search_id,
                     reply,
                 } => {
-                    let result = self.get_history_search_count(history_search_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.get_history_search_count(history_search_id);
+                    reply.send(result).unwrap();
                 }
                 Command::SubscribeHistorySearch {
                     history_search_id,
                     reply,
                 } => {
-                    let result = self.subscribe_history_search(history_search_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.subscribe_history_search(history_search_id);
+                    reply.send(result).unwrap();
                 }
                 Command::DeleteHistorySearch {
                     history_search_id,
                     reply,
                 } => {
-                    let result = self.delete_history_search(history_search_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.delete_history_search(history_search_id);
+                    reply.send(result).unwrap();
                 }
                 Command::ListScenarios { reply } => {
-                    let result = self.list_scenarios().unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.list_scenarios();
+                    reply.send(result).unwrap();
                 }
                 Command::CreateScenario {
                     parent,
@@ -143,55 +137,47 @@ impl Database {
                     type_,
                     reply,
                 } => {
-                    let result = self
-                        .create_scenario(parent, user_defined_id, description, type_)
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.create_scenario(parent, user_defined_id, description, type_);
+                    reply.send(result).unwrap();
                 }
                 Command::LookupScenario {
                     user_defined_id,
                     reply,
                 } => {
-                    let result = self.lookup_scenario(user_defined_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.lookup_scenario(user_defined_id);
+                    reply.send(result).unwrap();
                 }
                 Command::MoveScenarioBefore {
                     move_scenario_id,
                     before_scenario_id,
                     reply,
                 } => {
-                    let result = self
-                        .move_scenario_before(move_scenario_id, before_scenario_id)
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.move_scenario_before(move_scenario_id, before_scenario_id);
+                    reply.send(result).unwrap();
                 }
                 Command::MoveScenarioInside {
                     move_scenario_id,
                     parent_scenario_id,
                     reply,
                 } => {
-                    let result = self
-                        .move_scenario_inside(move_scenario_id, parent_scenario_id)
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.move_scenario_inside(move_scenario_id, parent_scenario_id);
+                    reply.send(result).unwrap();
                 }
                 Command::MoveScenarioAfter {
                     move_scenario_id,
                     after_scenario_id,
                     reply,
                 } => {
-                    let result = self
-                        .move_scenario_after(move_scenario_id, after_scenario_id)
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.move_scenario_after(move_scenario_id, after_scenario_id);
+                    reply.send(result).unwrap();
                 }
                 Command::DeleteScenario { scenario_id, reply } => {
-                    let result = self.delete_scenario(scenario_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel).unwrap();
+                    let result = self.delete_scenario(scenario_id);
+                    reply.send(result).unwrap();
                 }
                 Command::GetScenarioInfo { scenario_id, reply } => {
-                    let result = self.get_scenario_info(scenario_id).unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.get_scenario_info(scenario_id);
+                    reply.send(result).unwrap();
                 }
                 Command::UpdateScenarioInfo {
                     scenario_id,
@@ -200,23 +186,21 @@ impl Database {
                     previous_modified_time,
                     reply,
                 } => {
-                    let result = self
-                        .update_scenario_info(
-                            scenario_id,
-                            user_defined_id,
-                            description,
-                            previous_modified_time,
-                        )
-                        .unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.update_scenario_info(
+                        scenario_id,
+                        user_defined_id,
+                        description,
+                        previous_modified_time,
+                    );
+                    reply.send(result).unwrap();
                 }
                 Command::SubscribeScenario { reply } => {
-                    let result = self.subscribe_scenario().unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.subscribe_scenario();
+                    reply.send(result).unwrap();
                 }
                 Command::SubscribeMethodology { reply } => {
-                    let result = self.subscribe_methodology().unwrap();
-                    reply.send(result).map_err(|_| RunError::Channel)?;
+                    let result = self.subscribe_methodology();
+                    reply.send(result).unwrap();
                 }
             }
         }
@@ -235,27 +219,24 @@ impl Database {
             tracing::debug!(bytes_compressed);
             tracing::debug!("Percentage bytes stored of total: {percentage_stored_of_total:.0}%");
         }
-
-        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn store_http_history(
-        &mut self,
-        test_id: Option<TestId>,
-        http_message: HttpMessage,
-    ) -> RunResult<i64> {
-        let txn = self.db.transaction()?;
+    fn store_http_history(&mut self, test_id: Option<TestId>, http_message: HttpMessage) -> i64 {
+        let txn = self.db.transaction().unwrap();
         let mut storage_stats = Default::default();
 
         tracing::trace!("Creating history record");
         let history_id = {
-            let mut insert =
-                txn.prepare_cached("INSERT INTO history (date_secs, date_nsecs) VALUES (?,?)")?;
-            insert.execute((
-                http_message.request_time.timestamp(),
-                http_message.request_time.timestamp_subsec_nanos(),
-            ))?;
+            let mut insert = txn
+                .prepare_cached("INSERT INTO history (date_secs, date_nsecs) VALUES (?,?)")
+                .unwrap();
+            insert
+                .execute((
+                    http_message.request_time.timestamp(),
+                    http_message.request_time.timestamp_subsec_nanos(),
+                ))
+                .unwrap();
 
             txn.last_insert_rowid()
         };
@@ -264,68 +245,87 @@ impl Database {
         {
             // Test ID 1 is guaranteed to exist, it holds proxied requests
             let test_id = test_id.unwrap_or(TestId(1)).0;
-            let mut insert =
-                txn.prepare_cached("INSERT INTO test_history (test_id, history_id) VALUES (?,?)")?;
-            insert.execute((test_id, history_id))?;
+            let mut insert = txn
+                .prepare_cached("INSERT INTO test_history (test_id, history_id) VALUES (?,?)")
+                .unwrap();
+            insert.execute((test_id, history_id)).unwrap();
         }
 
         let (request_location_id, request_header_id, opt_request_body_id) =
-            store_http_request(&txn, &http_message.request, &mut storage_stats)?;
+            store_http_request(&txn, &http_message.request, &mut storage_stats);
 
         let (response_header_id, response_body_id) =
             if let Ok(http_response) = &http_message.response {
-                store_http_response(&txn, http_response, &mut storage_stats)?
+                store_http_response(&txn, http_response, &mut storage_stats)
             } else {
-                let empty_content = store_content(&txn, b"", &mut storage_stats)?;
+                let empty_content = store_content(&txn, b"", &mut storage_stats);
 
                 (empty_content, empty_content)
             };
 
         let connection_info_id = {
             let host_id = {
-                let mut query = txn.prepare_cached("SELECT host_id FROM host WHERE host = ?")?;
+                let mut query = txn
+                    .prepare_cached("SELECT host_id FROM host WHERE host = ?")
+                    .unwrap();
 
                 if let Some(host_id) = query
                     .query_row((&http_message.host,), |row| row.get(0))
-                    .optional()?
+                    .optional()
+                    .unwrap()
                 {
                     tracing::trace!("Using existing host_id record");
 
                     host_id
                 } else {
                     tracing::trace!("Creating host_id record");
-                    let mut insert = txn.prepare_cached("INSERT INTO host (host) VALUES (?)")?;
-                    insert.execute((&http_message.host,))?;
+                    let mut insert = txn
+                        .prepare_cached("INSERT INTO host (host) VALUES (?)")
+                        .unwrap();
+
+                    insert.execute((&http_message.host,)).unwrap();
 
                     txn.last_insert_rowid()
                 }
             };
 
-            let mut query = txn.prepare_cached(
-                "SELECT connection_info_id
-                FROM connection_info
-                WHERE host_id = ? AND port = ? AND is_https = ?",
-            )?;
+            let mut query = txn
+                .prepare_cached(
+                    "
+                    SELECT connection_info_id
+                    FROM connection_info
+                    WHERE host_id = ? AND port = ? AND is_https = ?
+                    ",
+                )
+                .unwrap();
 
             if let Some(connection_info_id) = query
                 .query_row((host_id, http_message.port, http_message.is_https), |row| {
                     row.get(0)
                 })
-                .optional()?
+                .optional()
+                .unwrap()
             {
                 tracing::trace!("Using existing connection_info record");
 
                 connection_info_id
             } else {
                 tracing::trace!("Creating connection_info record");
-                let mut insert = txn.prepare_cached(
-                    "INSERT INTO
-                        connection_info
-                    (host_id, port, is_https)
-                    VALUES
-                        (?,?,?)",
-                )?;
-                insert.execute((host_id, http_message.port, http_message.is_https))?;
+                let mut insert = txn
+                    .prepare_cached(
+                        "
+                        INSERT INTO
+                            connection_info
+                        (host_id, port, is_https)
+                        VALUES
+                            (?,?,?)
+                        ",
+                    )
+                    .unwrap();
+
+                insert
+                    .execute((host_id, http_message.port, http_message.is_https))
+                    .unwrap();
 
                 txn.last_insert_rowid()
             }
@@ -333,59 +333,74 @@ impl Database {
 
         {
             tracing::trace!("Creating http_history record");
-            let mut insert = txn.prepare_cached(
-                "INSERT INTO
-                    http_history
-                (
-                    http_history_id,
+            let mut insert = txn
+                .prepare_cached(
+                    "
+                    INSERT INTO
+                        http_history
+                    (
+                        http_history_id,
+                        connection_info_id,
+                        request_location_id,
+                        request_header_id,
+                        response_date_secs,
+                        response_date_nsecs,
+                        response_header_id,
+                        response_body_id
+                    )
+                    VALUES
+                        (?,?,?,?,?,?,?,?)
+                    ",
+                )
+                .unwrap();
+
+            insert
+                .execute((
+                    history_id,
                     connection_info_id,
                     request_location_id,
                     request_header_id,
-                    response_date_secs,
-                    response_date_nsecs,
+                    http_message.response_time.timestamp(),
+                    http_message.response_time.timestamp_subsec_nanos(),
                     response_header_id,
-                    response_body_id
-                )
-                VALUES
-                    (?,?,?,?,?,?,?,?)",
-            )?;
-            insert.execute((
-                history_id,
-                connection_info_id,
-                request_location_id,
-                request_header_id,
-                http_message.response_time.timestamp(),
-                http_message.response_time.timestamp_subsec_nanos(),
-                response_header_id,
-                response_body_id,
-            ))?;
+                    response_body_id,
+                ))
+                .unwrap();
         }
 
         if let Some(request_body_id) = opt_request_body_id {
             tracing::trace!("Creating http_history_request_body record");
-            let mut insert = txn.prepare_cached(
-                "INSERT INTO
-                    http_history_request_body
-                (
-                    http_history_id,
-                    request_body_id
+            let mut insert = txn
+                .prepare_cached(
+                    "
+                    INSERT INTO
+                        http_history_request_body
+                    (
+                        http_history_id,
+                        request_body_id
+                    )
+                    VALUES
+                        (?,?)
+                    ",
                 )
-                VALUES
-                    (?,?)",
-            )?;
-            insert.execute((history_id, request_body_id))?;
+                .unwrap();
+
+            insert.execute((history_id, request_body_id)).unwrap();
         }
 
         if let Err(error) = http_message.response {
             tracing::trace!("Creating http_error record");
-            let mut insert = txn.prepare_cached(
-                "INSERT INTO http_error (http_history_id, http_error_enum_id) VALUES (?,?)",
-            )?;
+            let mut insert = txn
+                .prepare_cached(
+                    "INSERT INTO http_error (http_history_id, http_error_enum_id) VALUES (?,?)",
+                )
+                .unwrap();
             let error_code: u8 = error.into();
-            insert.execute((history_id, error_code))?;
+
+            insert.execute((history_id, error_code)).unwrap();
         }
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // It's ok for this to return an error if there are no subscribers
         let _ = self.history_update_tx.send(());
@@ -398,15 +413,12 @@ impl Database {
         self.storage_stats.bytes_deduplicated += storage_stats.bytes_deduplicated;
         self.storage_stats.bytes_stored += storage_stats.bytes_stored;
 
-        Ok(history_id)
+        history_id
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn get_http_history(
-        &mut self,
-        http_history_id: HistoryId,
-    ) -> RunResult<LookupResult<HttpMessage>> {
-        let txn = self.db.transaction()?;
+    fn get_http_history(&mut self, http_history_id: HistoryId) -> LookupResult<HttpMessage> {
+        let txn = self.db.transaction().unwrap();
         let (
             host,
             port,
@@ -422,46 +434,50 @@ impl Database {
             response_body_id,
             opt_http_error_enum_id,
         ) = {
-            let mut query = txn.prepare_cached(
-                "SELECT
-                    host.host,
-                    connection_info.port,
-                    connection_info.is_https,
-                    history.date_secs,
-                    history.date_nsecs,
-                    http_history.request_location_id,
-                    http_history.request_header_id,
-                    http_history_request_body.request_body_id,
-                    http_history.response_date_secs,
-                    http_history.response_date_nsecs,
-                    http_history.response_header_id,
-                    http_history.response_body_id,
-                    http_error.http_error_enum_id
-                FROM
-                    http_history
-                INNER JOIN
-                    history
-                ON
-                    http_history.http_history_id = history.history_id
-                INNER JOIN
-                    connection_info
-                ON
-                    http_history.connection_info_id = connection_info.connection_info_id
-                INNER JOIN
-                    host
-                ON
-                    connection_info.host_id = host.host_id
-                LEFT JOIN
-                    http_history_request_body
-                ON
-                    http_history.http_history_id = http_history_request_body.http_history_id
-                LEFT JOIN
-                    http_error
-                ON
-                    http_history.http_history_id = http_error.http_history_id
-                WHERE
-                    http_history.http_history_id = ?",
-            )?;
+            let mut query = txn
+                .prepare_cached(
+                    "
+                    SELECT
+                        host.host,
+                        connection_info.port,
+                        connection_info.is_https,
+                        history.date_secs,
+                        history.date_nsecs,
+                        http_history.request_location_id,
+                        http_history.request_header_id,
+                        http_history_request_body.request_body_id,
+                        http_history.response_date_secs,
+                        http_history.response_date_nsecs,
+                        http_history.response_header_id,
+                        http_history.response_body_id,
+                        http_error.http_error_enum_id
+                    FROM
+                        http_history
+                    INNER JOIN
+                        history
+                    ON
+                        http_history.http_history_id = history.history_id
+                    INNER JOIN
+                        connection_info
+                    ON
+                        http_history.connection_info_id = connection_info.connection_info_id
+                    INNER JOIN
+                        host
+                    ON
+                        connection_info.host_id = host.host_id
+                    LEFT JOIN
+                        http_history_request_body
+                    ON
+                        http_history.http_history_id = http_history_request_body.http_history_id
+                    LEFT JOIN
+                        http_error
+                    ON
+                        http_history.http_history_id = http_error.http_history_id
+                    WHERE
+                        http_history.http_history_id = ?
+                    ",
+                )
+                .unwrap();
 
             if let Some(result) = query
                 .query_row((http_history_id.0,), |row| {
@@ -481,11 +497,12 @@ impl Database {
                         row.get::<usize, Option<u8>>(12)?,
                     ))
                 })
-                .optional()?
+                .optional()
+                .unwrap()
             {
                 result
             } else {
-                return Ok(Err(LookupError::NotFound));
+                return Err(LookupError::NotFound);
             }
         };
 
@@ -494,7 +511,7 @@ impl Database {
             request_location_id,
             request_header_id,
             opt_request_body_id,
-        )?;
+        );
         let response = if let Some(http_error_enum_id) = opt_http_error_enum_id {
             let err = HttpError::try_from(http_error_enum_id).unwrap();
             Err(err)
@@ -503,12 +520,12 @@ impl Database {
                 &txn,
                 response_header_id,
                 response_body_id,
-            )?)
+            ))
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(Ok(HttpMessage {
+        Ok(HttpMessage {
             request_time: chrono::Local
                 .timestamp_opt(request_date_secs, request_date_nsecs)
                 .unwrap(),
@@ -520,29 +537,31 @@ impl Database {
             is_https,
             request,
             response,
-        }))
+        })
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn create_history_search(&mut self) -> RunResult<HistorySearchId> {
-        Ok(HistorySearchId)
+    fn create_history_search(&mut self) -> HistorySearchId {
+        HistorySearchId
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     fn get_history_search_count(
         &mut self,
         _history_search_id: HistorySearchId,
-    ) -> RunResult<LookupResult<u32>> {
-        let txn = self.db.transaction()?;
+    ) -> LookupResult<u32> {
+        let txn = self.db.transaction().unwrap();
         let result = {
-            let mut query = txn.prepare_cached("SELECT COUNT(history_id) FROM history")?;
+            let mut query = txn
+                .prepare_cached("SELECT COUNT(history_id) FROM history")
+                .unwrap();
 
-            query.query_row([], |row| row.get(0))?
+            query.query_row([], |row| row.get(0)).unwrap()
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(Ok(result))
+        Ok(result)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -551,53 +570,54 @@ impl Database {
         _history_search_id: HistorySearchId,
         start_index: u32,
         count: u32,
-    ) -> RunResult<LookupResult<Vec<HistoryId>>> {
-        let txn = self.db.transaction()?;
+    ) -> LookupResult<Vec<HistoryId>> {
+        let txn = self.db.transaction().unwrap();
         let result = {
             let mut result = Vec::with_capacity(count as usize);
-            let mut query = txn.prepare_cached(
-                "SELECT history_id FROM history ORDER BY history_id LIMIT ? OFFSET ?",
-            )?;
-            let query = query.query_map((count, start_index), |row| Ok(HistoryId(row.get(0)?)))?;
+            let mut query = txn
+                .prepare_cached(
+                    "SELECT history_id FROM history ORDER BY history_id LIMIT ? OFFSET ?",
+                )
+                .unwrap();
+            let query = query
+                .query_map((count, start_index), |row| Ok(HistoryId(row.get(0)?)))
+                .unwrap();
 
             for item in query {
-                result.push(item?)
+                result.push(item.unwrap())
             }
 
             result
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(Ok(result))
+        Ok(result)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     fn subscribe_history_search(
         &self,
         _history_search_id: HistorySearchId,
-    ) -> RunResult<tokio::sync::watch::Receiver<()>> {
-        Ok(self.history_update_tx.subscribe())
+    ) -> tokio::sync::watch::Receiver<()> {
+        self.history_update_tx.subscribe()
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn delete_history_search(
-        &mut self,
-        _history_search_id: HistorySearchId,
-    ) -> RunResult<LookupResult<()>> {
-        Ok(Ok(()))
+    fn delete_history_search(&mut self, _history_search_id: HistorySearchId) -> LookupResult<()> {
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn list_scenarios(&mut self) -> RunResult<Vec<ScenarioTreeNode>> {
-        let txn = self.db.transaction()?;
+    fn list_scenarios(&mut self) -> Vec<ScenarioTreeNode> {
+        let txn = self.db.transaction().unwrap();
         let parent_id = None;
         let recursion_depth = 0;
-        let result = list_scenario_children(&txn, parent_id, recursion_depth)?;
+        let result = list_scenario_children(&txn, parent_id, recursion_depth);
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(result)
+        result
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -607,52 +627,59 @@ impl Database {
         user_defined_id: String,
         description: String,
         type_: ScenarioType,
-    ) -> RunResult<Result<ScenarioId, CreateScenarioError>> {
-        let txn = self.db.transaction()?;
+    ) -> Result<ScenarioId, CreateScenarioError> {
+        let txn = self.db.transaction().unwrap();
         let parent_id = parent_id.map(|x| x.0);
 
         let num_scenarios: u32 = {
-            let mut query = txn.prepare_cached("SELECT COUNT(scenario_id) FROM scenario")?;
+            let mut query = txn
+                .prepare_cached("SELECT COUNT(scenario_id) FROM scenario")
+                .unwrap();
 
-            query.query_row([], |row| row.get(0))?
+            query.query_row([], |row| row.get(0)).unwrap()
         };
 
         if num_scenarios >= MAX_SCENARIOS {
-            return Ok(Err(CreateScenarioError::ScenarioLimitExceeded));
+            return Err(CreateScenarioError::ScenarioLimitExceeded);
         }
 
         if let Some(parent_id) = parent_id {
             // Check that the parent exists and that the new child will not exceed the recursion
             // limit
-            if let Some(depth) = get_scenario_depth(&txn, parent_id)? {
+            if let Some(depth) = get_scenario_depth(&txn, parent_id) {
                 if depth + 1 >= MAX_SCENARIO_TREE_DEPTH {
-                    return Ok(Err(CreateScenarioError::MaxScenarioTreeDepthExceeded));
+                    return Err(CreateScenarioError::MaxScenarioTreeDepthExceeded);
                 }
             } else {
-                return Ok(Err(CreateScenarioError::ParentDoesNotExist));
+                return Err(CreateScenarioError::ParentDoesNotExist);
             }
         }
 
         {
-            let mut query =
-                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+            let mut query = txn
+                .prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")
+                .unwrap();
 
             if query
                 .query_row((&user_defined_id,), |_| Ok(()))
-                .optional()?
+                .optional()
+                .unwrap()
                 .is_some()
             {
-                return Ok(Err(CreateScenarioError::IdAlreadyExists));
+                return Err(CreateScenarioError::IdAlreadyExists);
             }
         }
 
         let next_position = {
             if parent_id.is_some() {
-                let mut query =
-                    txn.prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")?;
+                let mut query = txn
+                    .prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")
+                    .unwrap();
 
-                if let Some(position) =
-                    query.query_row((parent_id,), |row| Ok(row.get::<usize, Option<u32>>(0)))??
+                if let Some(position) = query
+                    .query_row((parent_id,), |row| Ok(row.get::<usize, Option<u32>>(0)))
+                    .unwrap()
+                    .unwrap()
                 {
                     position + 1
                 } else {
@@ -660,10 +687,13 @@ impl Database {
                 }
             } else {
                 let mut query = txn
-                    .prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id IS NULL")?;
+                    .prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id IS NULL")
+                    .unwrap();
 
-                if let Some(position) =
-                    query.query_row([], |row| Ok(row.get::<usize, Option<u32>>(0)))??
+                if let Some(position) = query
+                    .query_row([], |row| Ok(row.get::<usize, Option<u32>>(0)))
+                    .unwrap()
+                    .unwrap()
                 {
                     position + 1
                 } else {
@@ -675,54 +705,60 @@ impl Database {
         let scenario_id = {
             let scenario_type_enum_id: u8 = type_.into();
             let now = chrono::offset::Local::now();
-            let mut insert = txn.prepare_cached(
-                "
-                INSERT INTO scenario (
-                    parent_id,
-                    position,
-                    scenario_type_enum_id,
-                    user_defined_id,
-                    description,
-                    date_created,
-                    date_modified_secs,
-                    date_modified_nsecs
-                ) VALUES (?,?,?,?,?,?,?,?)
-                ",
-            )?;
+            let mut insert = txn
+                .prepare_cached(
+                    "
+                    INSERT INTO scenario (
+                        parent_id,
+                        position,
+                        scenario_type_enum_id,
+                        user_defined_id,
+                        description,
+                        date_created,
+                        date_modified_secs,
+                        date_modified_nsecs
+                    ) VALUES (?,?,?,?,?,?,?,?)
+                    ",
+                )
+                .unwrap();
 
-            insert.execute((
-                parent_id,
-                next_position,
-                scenario_type_enum_id,
-                &user_defined_id,
-                &description,
-                now.timestamp(),
-                now.timestamp(),
-                now.timestamp_subsec_nanos(),
-            ))?;
+            insert
+                .execute((
+                    parent_id,
+                    next_position,
+                    scenario_type_enum_id,
+                    &user_defined_id,
+                    &description,
+                    now.timestamp(),
+                    now.timestamp(),
+                    now.timestamp_subsec_nanos(),
+                ))
+                .unwrap();
 
             txn.last_insert_rowid()
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // Notify subscribers that the methodology has been updated. It's OK for this to return an
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        Ok(Ok(ScenarioId(scenario_id)))
+        Ok(ScenarioId(scenario_id))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn lookup_scenario(&mut self, user_defined_id: String) -> RunResult<LookupResult<ScenarioId>> {
-        let txn = self.db.transaction()?;
+    fn lookup_scenario(&mut self, user_defined_id: String) -> LookupResult<ScenarioId> {
+        let txn = self.db.transaction().unwrap();
 
         let result = {
-            let mut query =
-                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+            let mut query = txn
+                .prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")
+                .unwrap();
             let query = query
                 .query_row((user_defined_id,), |row| row.get::<usize, i64>(0))
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some(id) = query {
                 Ok(ScenarioId(id))
@@ -731,9 +767,9 @@ impl Database {
             }
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(result)
+        result
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -741,36 +777,40 @@ impl Database {
         &mut self,
         move_scenario_id: ScenarioId,
         before_scenario_id: ScenarioId,
-    ) -> RunResult<Result<(), MoveScenarioError>> {
-        let txn = self.db.transaction()?;
+    ) -> Result<(), MoveScenarioError> {
+        let txn = self.db.transaction().unwrap();
         let (old_position, old_parent) = {
             let mut query = txn
-                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
             let query = query
                 .query_row((move_scenario_id.0,), |row| {
                     Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
                 })
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some((position, parent_id)) = query {
                 (position, parent_id)
             } else {
-                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+                return Err(MoveScenarioError::MoveScenarioNotFound);
             }
         };
         let (before_position, new_parent) = {
             let mut query = txn
-                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
             let query = query
                 .query_row((before_scenario_id.0,), |row| {
                     Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
                 })
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some((position, parent_id)) = query {
                 (position, parent_id)
             } else {
-                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+                return Err(MoveScenarioError::TargetScenarioNotFound);
             }
         };
 
@@ -780,46 +820,49 @@ impl Database {
             if let Some(new_parent) = new_parent {
                 // Make sure we aren't reparented under one of our own children
                 {
-                    let mut query = txn.prepare_cached(
-                        "
-                        WITH RECURSIVE
-                            parent(scenario_id, parent_id)
-                        AS
-                        (
-                            SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+                    let mut query = txn
+                        .prepare_cached(
+                            "
+                            WITH RECURSIVE
+                                parent(scenario_id, parent_id)
+                            AS
+                            (
+                                SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
 
-                            UNION ALL
+                                UNION ALL
 
-                            SELECT
-                                s.scenario_id, s.parent_id
-                            FROM
-                                parent p
-                            JOIN
-                                scenario s
-                            ON
-                                p.parent_id = s.scenario_id
+                                SELECT
+                                    s.scenario_id, s.parent_id
+                                FROM
+                                    parent p
+                                JOIN
+                                    scenario s
+                                ON
+                                    p.parent_id = s.scenario_id
+                            )
+                            SELECT scenario_id FROM parent WHERE scenario_id = ?
+                            ",
                         )
-                        SELECT scenario_id FROM parent WHERE scenario_id = ?
-                        ",
-                    )?;
+                        .unwrap();
 
                     if query
                         .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
-                        .optional()?
+                        .optional()
+                        .unwrap()
                         .is_some()
                     {
                         // The new parent is the scenario or a child of the scenario
-                        return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+                        return Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario);
                     }
                 }
 
                 // Make sure we don't exceed the depth limit
-                let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
-                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+                let new_parent_depth = get_scenario_depth(&txn, new_parent).unwrap();
+                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0);
                 let new_total_depth = new_parent_depth + my_child_depth;
 
                 if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
-                    return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+                    return Err(MoveScenarioError::MaxScenarioTreeDepthExceeded);
                 }
             }
         }
@@ -828,9 +871,11 @@ impl Database {
         // violate a uniqueness constraint while updating the positions
         {
             // We guarantee position 0 is never used
-            let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
-            update.execute((move_scenario_id.0,))?;
+            let mut update = txn
+                .prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")
+                .unwrap();
+
+            update.execute((move_scenario_id.0,)).unwrap();
         }
 
         // Now, change the position of everything after the old position on the old parent to
@@ -838,12 +883,14 @@ impl Database {
         if let Some(old_parent) = old_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
-            )?;
-            update.execute((old_parent, old_position))?;
+            ).unwrap();
+
+            update.execute((old_parent, old_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
-            update.execute((old_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?").unwrap();
+
+            update.execute((old_position,)).unwrap();
         }
 
         let mut target_position = before_position;
@@ -864,40 +911,49 @@ impl Database {
         if let Some(new_parent) = new_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position + 999999 WHERE parent_id = ? AND position >= ?",
-            )?;
-            update.execute((new_parent, target_position))?;
+            ).unwrap();
+
+            update.execute((new_parent, target_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?")?;
-            update.execute((target_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?").unwrap();
+
+            update.execute((target_position,)).unwrap();
         }
 
         if let Some(new_parent) = new_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position - 999998 WHERE parent_id = ? AND position >= ?",
-            )?;
-            update.execute((new_parent, target_position))?;
+            ).unwrap();
+
+            update.execute((new_parent, target_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?")?;
-            update.execute((target_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?").unwrap();
+
+            update.execute((target_position,)).unwrap();
         }
 
         // Finally, set the new position and parent on the scenario
         {
-            let mut update = txn.prepare_cached(
-                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
-            )?;
-            update.execute((new_parent, target_position, move_scenario_id.0))?;
+            let mut update = txn
+                .prepare_cached(
+                    "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+                )
+                .unwrap();
+
+            update
+                .execute((new_parent, target_position, move_scenario_id.0))
+                .unwrap();
         }
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // Notify subscribers that the methodology has been updated. It's OK for this to return an
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        Ok(Ok(()))
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -905,36 +961,40 @@ impl Database {
         &mut self,
         move_scenario_id: ScenarioId,
         after_scenario_id: ScenarioId,
-    ) -> RunResult<Result<(), MoveScenarioError>> {
-        let txn = self.db.transaction()?;
+    ) -> Result<(), MoveScenarioError> {
+        let txn = self.db.transaction().unwrap();
         let (old_position, old_parent) = {
             let mut query = txn
-                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
             let query = query
                 .query_row((move_scenario_id.0,), |row| {
                     Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
                 })
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some((position, parent_id)) = query {
                 (position, parent_id)
             } else {
-                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+                return Err(MoveScenarioError::MoveScenarioNotFound);
             }
         };
         let (after_position, new_parent) = {
             let mut query = txn
-                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
             let query = query
                 .query_row((after_scenario_id.0,), |row| {
                     Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
                 })
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some((position, parent_id)) = query {
                 (position, parent_id)
             } else {
-                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+                return Err(MoveScenarioError::TargetScenarioNotFound);
             }
         };
 
@@ -944,46 +1004,49 @@ impl Database {
             if let Some(new_parent) = new_parent {
                 // Make sure we aren't reparented under one of our own children
                 {
-                    let mut query = txn.prepare_cached(
-                        "
-                        WITH RECURSIVE
-                            parent(scenario_id, parent_id)
-                        AS
-                        (
-                            SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+                    let mut query = txn
+                        .prepare_cached(
+                            "
+                            WITH RECURSIVE
+                                parent(scenario_id, parent_id)
+                            AS
+                            (
+                                SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
 
-                            UNION ALL
+                                UNION ALL
 
-                            SELECT
-                                s.scenario_id, s.parent_id
-                            FROM
-                                parent p
-                            JOIN
-                                scenario s
-                            ON
-                                p.parent_id = s.scenario_id
+                                SELECT
+                                    s.scenario_id, s.parent_id
+                                FROM
+                                    parent p
+                                JOIN
+                                    scenario s
+                                ON
+                                    p.parent_id = s.scenario_id
+                            )
+                            SELECT scenario_id FROM parent WHERE scenario_id = ?
+                            ",
                         )
-                        SELECT scenario_id FROM parent WHERE scenario_id = ?
-                        ",
-                    )?;
+                        .unwrap();
 
                     if query
                         .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
-                        .optional()?
+                        .optional()
+                        .unwrap()
                         .is_some()
                     {
                         // The new parent is the scenario or a child of the scenario
-                        return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+                        return Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario);
                     }
                 }
 
                 // Make sure we don't exceed the depth limit
-                let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
-                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+                let new_parent_depth = get_scenario_depth(&txn, new_parent).unwrap();
+                let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0);
                 let new_total_depth = new_parent_depth + my_child_depth;
 
                 if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
-                    return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+                    return Err(MoveScenarioError::MaxScenarioTreeDepthExceeded);
                 }
             }
         }
@@ -992,9 +1055,11 @@ impl Database {
         // violate a uniqueness constraint while updating the positions
         {
             // We guarantee position 0 is never used
-            let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
-            update.execute((move_scenario_id.0,))?;
+            let mut update = txn
+                .prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")
+                .unwrap();
+
+            update.execute((move_scenario_id.0,)).unwrap();
         }
 
         // Now, change the position of everything after the old position on the old parent to
@@ -1002,12 +1067,14 @@ impl Database {
         if let Some(old_parent) = old_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
-            )?;
-            update.execute((old_parent, old_position))?;
+            ).unwrap();
+
+            update.execute((old_parent, old_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
-            update.execute((old_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?").unwrap();
+
+            update.execute((old_position,)).unwrap();
         }
 
         let mut target_position = after_position + 1;
@@ -1028,40 +1095,49 @@ impl Database {
         if let Some(new_parent) = new_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position + 999999 WHERE parent_id = ? AND position >= ?",
-            )?;
-            update.execute((new_parent, target_position))?;
+            ).unwrap();
+
+            update.execute((new_parent, target_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?")?;
-            update.execute((target_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position + 999999 WHERE parent_id IS NULL AND position >= ?").unwrap();
+
+            update.execute((target_position,)).unwrap();
         }
 
         if let Some(new_parent) = new_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position - 999998 WHERE parent_id = ? AND position >= ?",
-            )?;
-            update.execute((new_parent, target_position))?;
+            ).unwrap();
+
+            update.execute((new_parent, target_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?")?;
-            update.execute((target_position,))?;
+                txn.prepare_cached("UPDATE scenario SET position = position - 999998 WHERE parent_id IS NULL AND position >= ?").unwrap();
+
+            update.execute((target_position,)).unwrap();
         }
 
         // Finally, set the new position and parent on the scenario
         {
-            let mut update = txn.prepare_cached(
-                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
-            )?;
-            update.execute((new_parent, target_position, move_scenario_id.0))?;
+            let mut update = txn
+                .prepare_cached(
+                    "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+                )
+                .unwrap();
+
+            update
+                .execute((new_parent, target_position, move_scenario_id.0))
+                .unwrap();
         }
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // Notify subscribers that the methodology has been updated. It's OK for this to return an
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        Ok(Ok(()))
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -1069,34 +1145,38 @@ impl Database {
         &mut self,
         move_scenario_id: ScenarioId,
         parent_scenario_id: ScenarioId,
-    ) -> RunResult<Result<(), MoveScenarioError>> {
-        let txn = self.db.transaction()?;
+    ) -> Result<(), MoveScenarioError> {
+        let txn = self.db.transaction().unwrap();
         let (old_position, old_parent) = {
             let mut query = txn
-                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")?;
+                .prepare_cached("SELECT position, parent_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
             let query = query
                 .query_row((move_scenario_id.0,), |row| {
                     Ok((row.get::<usize, u32>(0)?, row.get::<usize, Option<i64>>(1)?))
                 })
-                .optional()?;
+                .optional()
+                .unwrap();
 
             if let Some(row) = query {
                 row
             } else {
-                return Ok(Err(MoveScenarioError::MoveScenarioNotFound));
+                return Err(MoveScenarioError::MoveScenarioNotFound);
             }
         };
 
         {
-            let mut query =
-                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE scenario_id = ?")?;
+            let mut query = txn
+                .prepare_cached("SELECT scenario_id FROM scenario WHERE scenario_id = ?")
+                .unwrap();
 
             if query
                 .query_row((parent_scenario_id.0,), |_| Ok(()))
-                .optional()?
+                .optional()
+                .unwrap()
                 .is_none()
             {
-                return Ok(Err(MoveScenarioError::TargetScenarioNotFound));
+                return Err(MoveScenarioError::TargetScenarioNotFound);
             }
         };
 
@@ -1106,53 +1186,56 @@ impl Database {
 
         if old_parent == Some(new_parent) {
             // If the target is our parent, we don't need to do anything
-            txn.commit()?;
-            return Ok(Ok(()));
+            txn.commit().unwrap();
+            return Ok(());
         }
 
         // Make sure we aren't reparented under one of our own children
         {
-            let mut query = txn.prepare_cached(
-                "
-                WITH RECURSIVE
-                    parent(scenario_id, parent_id)
-                AS
-                (
-                    SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
+            let mut query = txn
+                .prepare_cached(
+                    "
+                    WITH RECURSIVE
+                        parent(scenario_id, parent_id)
+                    AS
+                    (
+                        SELECT scenario_id, parent_id FROM scenario WHERE scenario_id = ?
 
-                    UNION ALL
+                        UNION ALL
 
-                    SELECT
-                        s.scenario_id, s.parent_id
-                    FROM
-                        parent p
-                    JOIN
-                        scenario s
-                    ON
-                        p.parent_id = s.scenario_id
+                        SELECT
+                            s.scenario_id, s.parent_id
+                        FROM
+                            parent p
+                        JOIN
+                            scenario s
+                        ON
+                            p.parent_id = s.scenario_id
+                    )
+                    SELECT scenario_id FROM parent WHERE scenario_id = ?
+                    ",
                 )
-                SELECT scenario_id FROM parent WHERE scenario_id = ?
-                ",
-            )?;
+                .unwrap();
 
             if query
                 .query_row((new_parent, move_scenario_id.0), |_| Ok(()))
-                .optional()?
+                .optional()
+                .unwrap()
                 .is_some()
             {
                 // The new parent is the scenario or a child of the scenario
-                return Ok(Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario));
+                return Err(MoveScenarioError::TargetScenarioIsChildOfMoveScenario);
             }
         }
 
         // Make sure we don't exceed the depth limit
         {
-            let new_parent_depth = get_scenario_depth(&txn, new_parent)?.unwrap();
-            let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0)?;
+            let new_parent_depth = get_scenario_depth(&txn, new_parent).unwrap();
+            let my_child_depth = get_scenario_child_depth(&txn, move_scenario_id.0);
             let new_total_depth = new_parent_depth + my_child_depth;
 
             if new_total_depth >= MAX_SCENARIO_TREE_DEPTH {
-                return Ok(Err(MoveScenarioError::MaxScenarioTreeDepthExceeded));
+                return Err(MoveScenarioError::MaxScenarioTreeDepthExceeded);
             }
         }
 
@@ -1160,10 +1243,11 @@ impl Database {
         // violate a uniqueness constraint while updating the positions
         {
             // We guarantee position 0 is never used
-            let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")?;
+            let mut update = txn
+                .prepare_cached("UPDATE scenario SET position = 0 WHERE scenario_id = ?")
+                .unwrap();
 
-            update.execute((move_scenario_id.0,))?;
+            update.execute((move_scenario_id.0,)).unwrap();
         }
 
         // Now, change the position of everything after the old position on the old parent to
@@ -1171,23 +1255,26 @@ impl Database {
         if let Some(old_parent) = old_parent {
             let mut update = txn.prepare_cached(
                 "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
-            )?;
+            ).unwrap();
 
-            update.execute((old_parent, old_position))?;
+            update.execute((old_parent, old_position)).unwrap();
         } else {
             let mut update =
-                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?")?;
+                txn.prepare_cached("UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?").unwrap();
 
-            update.execute((old_position,))?;
+            update.execute((old_position,)).unwrap();
         }
 
         // Get the first free position under the new parent
         let target_position = {
-            let mut query =
-                txn.prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")?;
+            let mut query = txn
+                .prepare_cached("SELECT MAX(position) FROM scenario WHERE parent_id = ?")
+                .unwrap();
 
-            if let Some(position) =
-                query.query_row((new_parent,), |row| Ok(row.get::<usize, Option<u32>>(0)))??
+            if let Some(position) = query
+                .query_row((new_parent,), |row| Ok(row.get::<usize, Option<u32>>(0)))
+                .unwrap()
+                .unwrap()
             {
                 position + 1
             } else {
@@ -1197,31 +1284,32 @@ impl Database {
 
         // Finally, set the new position and parent on the scenario
         {
-            let mut update = txn.prepare_cached(
-                "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
-            )?;
+            let mut update = txn
+                .prepare_cached(
+                    "UPDATE scenario SET parent_id = ?, position = ? WHERE scenario_id = ?",
+                )
+                .unwrap();
 
-            update.execute((new_parent, target_position, move_scenario_id.0))?;
+            update
+                .execute((new_parent, target_position, move_scenario_id.0))
+                .unwrap();
         }
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // Notify subscribers that the methodology has been updated. It's OK for this to return an
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        Ok(Ok(()))
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn delete_scenario(
-        &mut self,
-        scenario_id: ScenarioId,
-    ) -> RunResult<Result<(), DeleteScenarioError>> {
-        let txn = self.db.transaction()?;
-        let result = delete_scenario(&txn, scenario_id.0);
+    fn delete_scenario(&mut self, scenario_id: ScenarioId) -> Result<(), DeleteScenarioError> {
+        let txn = self.db.transaction().unwrap();
 
-        txn.commit()?;
+        delete_scenario(&txn, scenario_id.0)?;
+        txn.commit().unwrap();
 
         // Notify subscribers that this scenario has been updated. It's OK for this to return an
         // error if there are no subscribers.
@@ -1231,44 +1319,43 @@ impl Database {
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        result
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn get_scenario_info(
-        &mut self,
-        scenario_id: ScenarioId,
-    ) -> RunResult<LookupResult<ScenarioInfo>> {
-        let txn = self.db.transaction()?;
+    fn get_scenario_info(&mut self, scenario_id: ScenarioId) -> LookupResult<ScenarioInfo> {
+        let txn = self.db.transaction().unwrap();
         let scenario_info = {
-            let mut query = txn.prepare_cached(
-                "
-            SELECT
-                scenario_id,
-                scenario_type_enum_id,
-                user_defined_id,
-                description,
-                date_created,
-                date_modified_secs,
-                date_modified_nsecs
-            FROM
-                scenario
-            WHERE
-                scenario_id = ?
-            ",
-            )?;
+            let mut query = txn
+                .prepare_cached(
+                    "
+                    SELECT
+                        scenario_id,
+                        scenario_type_enum_id,
+                        user_defined_id,
+                        description,
+                        date_created,
+                        date_modified_secs,
+                        date_modified_nsecs
+                    FROM
+                        scenario
+                    WHERE
+                        scenario_id = ?
+                    ",
+                )
+                .unwrap();
             let scenario_info = query.query_row((scenario_id.0,), deserialize_scenario);
 
             if let Ok(scenario_info) = scenario_info {
                 scenario_info
             } else {
-                return Ok(Err(LookupError::NotFound));
+                return Err(LookupError::NotFound);
             }
         };
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
-        Ok(Ok(scenario_info))
+        Ok(scenario_info)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -1278,50 +1365,52 @@ impl Database {
         user_defined_id: String,
         description: String,
         previous_modified_time: chrono::DateTime<chrono::Local>,
-    ) -> RunResult<Result<(), UpdateScenarioInfoError>> {
-        let txn = self.db.transaction()?;
+    ) -> Result<(), UpdateScenarioInfoError> {
+        let txn = self.db.transaction().unwrap();
         let existing_info = {
-            let mut query = txn.prepare_cached(
-                "
-            SELECT
-                scenario_id,
-                scenario_type_enum_id,
-                user_defined_id,
-                description,
-                date_created,
-                date_modified_secs,
-                date_modified_nsecs
-            FROM
-                scenario
-            WHERE
-                scenario_id = ?
-            ",
-            )?;
+            let mut query = txn
+                .prepare_cached(
+                    "
+                    SELECT
+                        scenario_id,
+                        scenario_type_enum_id,
+                        user_defined_id,
+                        description,
+                        date_created,
+                        date_modified_secs,
+                        date_modified_nsecs
+                    FROM
+                        scenario
+                    WHERE
+                        scenario_id = ?
+                    ",
+                )
+                .unwrap();
             let scenario_info = query.query_row((scenario_id.0,), deserialize_scenario);
 
             if let Ok(scenario_info) = scenario_info {
                 scenario_info
             } else {
-                return Ok(Err(UpdateScenarioInfoError::ScenarioNotFound));
+                return Err(UpdateScenarioInfoError::ScenarioNotFound);
             }
         };
 
         if previous_modified_time != existing_info.modified_time {
-            return Ok(Err(
-                UpdateScenarioInfoError::ModifiedTimeDoesNotMatchDatabase,
-            ));
+            return Err(UpdateScenarioInfoError::ModifiedTimeDoesNotMatchDatabase);
         }
 
         if user_defined_id != existing_info.user_defined_id {
-            let mut query =
-                txn.prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")?;
+            let mut query = txn
+                .prepare_cached("SELECT scenario_id FROM scenario WHERE user_defined_id = ?")
+                .unwrap();
 
             if query
                 .query_row((&user_defined_id,), |_| Ok(()))
-                .optional()?
+                .optional()
+                .unwrap()
                 .is_some()
             {
-                return Ok(Err(UpdateScenarioInfoError::UserDefinedIdAlreadyExists));
+                return Err(UpdateScenarioInfoError::UserDefinedIdAlreadyExists);
             }
         }
 
@@ -1331,30 +1420,34 @@ impl Database {
         };
 
         {
-            let mut update = txn.prepare_cached(
-                "
-                UPDATE
-                    scenario
-                SET
-                    user_defined_id = ?,
-                    description = ?,
-                    date_modified_secs = ?,
-                    date_modified_nsecs = ?
-                WHERE
-                    scenario_id = ?
-                ",
-            )?;
+            let mut update = txn
+                .prepare_cached(
+                    "
+                    UPDATE
+                        scenario
+                    SET
+                        user_defined_id = ?,
+                        description = ?,
+                        date_modified_secs = ?,
+                        date_modified_nsecs = ?
+                    WHERE
+                        scenario_id = ?
+                    ",
+                )
+                .unwrap();
 
-            update.execute((
-                &user_defined_id,
-                &description,
-                date_modified_secs,
-                date_modified_nsecs,
-                scenario_id.0,
-            ))?;
+            update
+                .execute((
+                    &user_defined_id,
+                    &description,
+                    date_modified_secs,
+                    date_modified_nsecs,
+                    scenario_id.0,
+                ))
+                .unwrap();
         }
 
-        txn.commit()?;
+        txn.commit().unwrap();
 
         // Notify subscribers that this scenario has been updated. It's OK for this to return an
         // error if there are no subscribers.
@@ -1364,17 +1457,17 @@ impl Database {
         // error if there are no subscribers.
         let _ = self.methodology_update_tx.send(());
 
-        Ok(Ok(()))
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn subscribe_scenario(&self) -> RunResult<tokio::sync::broadcast::Receiver<ScenarioId>> {
-        Ok(self.scenario_update_tx.subscribe())
+    fn subscribe_scenario(&self) -> tokio::sync::broadcast::Receiver<ScenarioId> {
+        self.scenario_update_tx.subscribe()
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn subscribe_methodology(&self) -> RunResult<tokio::sync::watch::Receiver<()>> {
-        Ok(self.methodology_update_tx.subscribe())
+    fn subscribe_methodology(&self) -> tokio::sync::watch::Receiver<()> {
+        self.methodology_update_tx.subscribe()
     }
 }
 
@@ -1624,27 +1717,6 @@ pub(crate) enum UpdateScenarioInfoError {
     UserDefinedIdAlreadyExists,
 }
 
-pub(super) type RunResult<T> = std::result::Result<T, RunError>;
-
-#[derive(Debug)]
-pub(super) enum RunError {
-    Database(rusqlite::Error),
-    IO(std::io::Error),
-    Channel,
-}
-
-impl From<rusqlite::Error> for RunError {
-    fn from(e: rusqlite::Error) -> Self {
-        Self::Database(e)
-    }
-}
-
-impl From<std::io::Error> for RunError {
-    fn from(value: std::io::Error) -> Self {
-        Self::IO(value)
-    }
-}
-
 #[derive(Default)]
 struct StorageStats {
     bytes_total: u64,
@@ -1657,7 +1729,7 @@ fn store_http_request(
     txn: &rusqlite::Transaction,
     http_request: &bytes::Bytes,
     storage_stats: &mut StorageStats,
-) -> RunResult<(i64, i64, Option<i64>)> {
+) -> (i64, i64, Option<i64>) {
     let index = {
         let mut found_first = false;
         let mut result = None;
@@ -1678,49 +1750,45 @@ fn store_http_request(
         result
     };
 
-    let result = if let Some(index) = index {
-        let request_location_id = store_content(txn, &http_request[0..index], storage_stats)?;
+    if let Some(index) = index {
+        let request_location_id = store_content(txn, &http_request[0..index], storage_stats);
 
         let (request_header_id, request_body_id) = if index < http_request.len() {
-            store_http_request_remainder(txn, &http_request[index..], storage_stats)?
+            store_http_request_remainder(txn, &http_request[index..], storage_stats)
         } else {
-            (store_content(txn, b"", storage_stats)?, None)
+            (store_content(txn, b"", storage_stats), None)
         };
 
         (request_location_id, request_header_id, request_body_id)
     } else {
-        let request_location_id = store_content(txn, b"", storage_stats)?;
-        let request_header_id = store_content(txn, http_request, storage_stats)?;
+        let request_location_id = store_content(txn, b"", storage_stats);
+        let request_header_id = store_content(txn, http_request, storage_stats);
 
         (request_location_id, request_header_id, None)
-    };
-
-    Ok(result)
+    }
 }
 
 fn store_http_request_remainder(
     txn: &rusqlite::Transaction,
     http_request: &[u8],
     storage_stats: &mut StorageStats,
-) -> RunResult<(i64, Option<i64>)> {
+) -> (i64, Option<i64>) {
     // Store the header and response body in two separate chunks, so duplicate bodies can be
     // deduplicated.
 
-    let result = if let Some(index) = http_request.windows(4).position(|w| w == b"\r\n\r\n") {
+    if let Some(index) = http_request.windows(4).position(|w| w == b"\r\n\r\n") {
         let index = index + 4;
-        let request_header_id = store_content(txn, &http_request[0..index], storage_stats)?;
+        let request_header_id = store_content(txn, &http_request[0..index], storage_stats);
         let request_body_id = if index < http_request.len() {
-            Some(store_content(txn, &http_request[index..], storage_stats)?)
+            Some(store_content(txn, &http_request[index..], storage_stats))
         } else {
             None
         };
 
         (request_header_id, request_body_id)
     } else {
-        (store_content(txn, http_request, storage_stats)?, None)
-    };
-
-    Ok(result)
+        (store_content(txn, http_request, storage_stats), None)
+    }
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
@@ -1728,14 +1796,20 @@ fn store_content(
     txn: &rusqlite::Transaction,
     content: &[u8],
     storage_stats: &mut StorageStats,
-) -> RunResult<i64> {
+) -> i64 {
     let len = content.len() as u64;
     let hash = hash_bytes(content);
-    let mut query = txn.prepare_cached("SELECT content_id FROM content WHERE hash = ?")?;
+    let mut query = txn
+        .prepare_cached("SELECT content_id FROM content WHERE hash = ?")
+        .unwrap();
 
     storage_stats.bytes_total += len;
 
-    let result = if let Some(content_id) = query.query_row((hash,), |row| row.get(0)).optional()? {
+    if let Some(content_id) = query
+        .query_row((hash,), |row| row.get(0))
+        .optional()
+        .unwrap()
+    {
         tracing::trace!("Using existing content record");
         storage_stats.bytes_deduplicated += len;
 
@@ -1745,9 +1819,9 @@ fn store_content(
         //let content_str = String::from_utf8_lossy(content);
         //tracing::trace!("    Storing content: {content_str:?}");
 
-        let compressed_data = zstd::bulk::compress(content, ZSTD_COMPRESSION_LEVEL)?;
-
+        let compressed_data = zstd::bulk::compress(content, ZSTD_COMPRESSION_LEVEL).unwrap();
         let compressed_len = compressed_data.len() as u64;
+
         storage_stats.bytes_stored += compressed_len;
 
         if compressed_len > len {
@@ -1756,13 +1830,14 @@ fn store_content(
             );
         }
 
-        let mut insert = txn.prepare_cached("INSERT INTO content (hash, data) VALUES (?,?)")?;
-        insert.execute((hash, compressed_data))?;
+        let mut insert = txn
+            .prepare_cached("INSERT INTO content (hash, data) VALUES (?,?)")
+            .unwrap();
+
+        insert.execute((hash, compressed_data)).unwrap();
 
         txn.last_insert_rowid()
-    };
-
-    Ok(result)
+    }
 }
 
 fn hash_bytes(bytes: &[u8]) -> i64 {
@@ -1781,7 +1856,7 @@ fn store_http_response(
     txn: &rusqlite::Transaction,
     http_response: &bytes::Bytes,
     storage_stats: &mut StorageStats,
-) -> RunResult<(i64, i64)> {
+) -> (i64, i64) {
     // Store the header and response body in two separate chunks, so duplicate bodies can be
     // deduplicated.
     let (header, body) = {
@@ -1803,10 +1878,10 @@ fn store_http_response(
         }
     };
 
-    let header_id = store_content(txn, header, storage_stats)?;
-    let body_id = store_content(txn, body, storage_stats)?;
+    let header_id = store_content(txn, header, storage_stats);
+    let body_id = store_content(txn, body, storage_stats);
 
-    Ok((header_id, body_id))
+    (header_id, body_id)
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
@@ -1815,29 +1890,25 @@ fn load_http_request(
     request_location_id: i64,
     request_header_id: i64,
     opt_request_body_id: Option<i64>,
-) -> RunResult<bytes::Bytes> {
+) -> bytes::Bytes {
     let mut bytes = bytes::BytesMut::with_capacity(LOAD_HTTP_REQUEST_INITIAL_BUFFER_CAPACITY);
 
-    load_content(txn, request_location_id, &mut bytes)?;
-    load_content(txn, request_header_id, &mut bytes)?;
+    load_content(txn, request_location_id, &mut bytes);
+    load_content(txn, request_header_id, &mut bytes);
     if let Some(request_body_id) = opt_request_body_id {
-        load_content(txn, request_body_id, &mut bytes)?;
+        load_content(txn, request_body_id, &mut bytes);
     }
 
-    Ok(bytes.freeze())
+    bytes.freeze()
 }
 
-fn load_content(
-    txn: &rusqlite::Transaction,
-    content_id: i64,
-    bytes: &mut bytes::BytesMut,
-) -> RunResult<()> {
-    let mut query = txn.prepare_cached("SELECT data FROM content WHERE content_id = ?")?;
-    let compressed_data: Vec<u8> = query.query_row((content_id,), |row| row.get(0))?;
+fn load_content(txn: &rusqlite::Transaction, content_id: i64, bytes: &mut bytes::BytesMut) {
+    let mut query = txn
+        .prepare_cached("SELECT data FROM content WHERE content_id = ?")
+        .unwrap();
+    let compressed_data: Vec<u8> = query.query_row((content_id,), |row| row.get(0)).unwrap();
 
-    zstd::stream::copy_decode(compressed_data.reader(), bytes.writer())?;
-
-    Ok(())
+    zstd::stream::copy_decode(compressed_data.reader(), bytes.writer()).unwrap();
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
@@ -1845,20 +1916,20 @@ fn load_http_response(
     txn: &rusqlite::Transaction,
     response_header_id: i64,
     response_body_id: i64,
-) -> RunResult<bytes::Bytes> {
+) -> bytes::Bytes {
     let mut bytes = bytes::BytesMut::with_capacity(LOAD_HTTP_RESPONSE_INITIAL_BUFFER_CAPACITY);
 
-    load_content(txn, response_header_id, &mut bytes)?;
-    load_content(txn, response_body_id, &mut bytes)?;
+    load_content(txn, response_header_id, &mut bytes);
+    load_content(txn, response_body_id, &mut bytes);
 
-    Ok(bytes.freeze())
+    bytes.freeze()
 }
 
 fn list_scenario_children(
     txn: &rusqlite::Transaction,
     parent_id: Option<ScenarioId>,
     recursion_depth: u8,
-) -> RunResult<Vec<ScenarioTreeNode>> {
+) -> Vec<ScenarioTreeNode> {
     // TODO: This limit should be stored in the database
     assert!(recursion_depth <= MAX_SCENARIO_TREE_DEPTH);
 
@@ -1880,7 +1951,8 @@ fn list_scenario_children(
             ORDER BY
                 position
             ",
-        )?
+        )
+        .unwrap()
     } else {
         txn.prepare_cached(
             "
@@ -1901,27 +1973,30 @@ fn list_scenario_children(
             ORDER BY
                 position
             ",
-        )?
+        )
+        .unwrap()
     };
 
     let query = if parent_id.is_some() {
-        query.query_map((parent_id.map(|x| x.0),), deserialize_scenario)?
+        query
+            .query_map((parent_id.map(|x| x.0),), deserialize_scenario)
+            .unwrap()
     } else {
-        query.query_map([], deserialize_scenario)?
+        query.query_map([], deserialize_scenario).unwrap()
     };
 
     let mut result = Vec::new();
 
     for info in query {
-        let info = info?;
+        let info = info.unwrap();
         let parent_id = Some(info.id);
         let recursion_depth = recursion_depth + 1;
-        let children = list_scenario_children(txn, parent_id, recursion_depth)?;
+        let children = list_scenario_children(txn, parent_id, recursion_depth);
 
         result.push(ScenarioTreeNode { info, children });
     }
 
-    Ok(result)
+    result
 }
 
 fn deserialize_scenario(row: &rusqlite::Row) -> rusqlite::Result<ScenarioInfo> {
@@ -1946,123 +2021,131 @@ fn deserialize_scenario(row: &rusqlite::Row) -> rusqlite::Result<ScenarioInfo> {
 }
 
 /// If the scenario exists, returns the absolute depth of the scenario
-fn get_scenario_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> RunResult<Option<u8>> {
-    let mut query = txn.prepare_cached(
-        "
-        WITH RECURSIVE
-            depth(scenario_id, depth)
-        AS
-        (
-            SELECT scenario_id, 0 FROM scenario WHERE parent_id IS NULL
+fn get_scenario_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> Option<u8> {
+    let mut query = txn
+        .prepare_cached(
+            "
+            WITH RECURSIVE
+                depth(scenario_id, depth)
+            AS
+            (
+                SELECT scenario_id, 0 FROM scenario WHERE parent_id IS NULL
 
-            UNION ALL
+                UNION ALL
 
-            SELECT
-                s.scenario_id, depth + 1
-            FROM
-                depth d
-            JOIN
-                scenario s
-            ON
-                d.scenario_id = s.parent_id
+                SELECT
+                    s.scenario_id, depth + 1
+                FROM
+                    depth d
+                JOIN
+                    scenario s
+                ON
+                    d.scenario_id = s.parent_id
+            )
+            SELECT depth FROM depth WHERE scenario_id = ?
+            ",
         )
-        SELECT depth FROM depth WHERE scenario_id = ?
-        ",
-    )?;
+        .unwrap();
 
     if let Some(depth) = query
         .query_row((scenario_id,), |row| Ok(row.get(0)))
-        .optional()?
+        .optional()
+        .unwrap()
     {
-        let depth = depth?;
+        let depth = depth.unwrap();
 
-        Ok(Some(depth))
+        Some(depth)
     } else {
-        Ok(None)
+        None
     }
 }
 
 /// Returns the deepest depth of the scenario and all the child scenarios relative to the scenario
 /// itself
-fn get_scenario_child_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> RunResult<u8> {
-    let mut query = txn.prepare_cached(
-        "
-        WITH RECURSIVE
-            depth(scenario_id, depth)
-        AS
-        (
-            SELECT scenario_id, 2 FROM scenario WHERE parent_id = ?
+fn get_scenario_child_depth(txn: &rusqlite::Transaction, scenario_id: i64) -> u8 {
+    let mut query = txn
+        .prepare_cached(
+            "
+            WITH RECURSIVE
+                depth(scenario_id, depth)
+            AS
+            (
+                SELECT scenario_id, 2 FROM scenario WHERE parent_id = ?
 
-            UNION ALL
+                UNION ALL
 
-            SELECT
-                s.scenario_id, depth + 1
-            FROM
-                depth d
-            JOIN
-                scenario s
-            ON
-                d.scenario_id = s.parent_id
+                SELECT
+                    s.scenario_id, depth + 1
+                FROM
+                    depth d
+                JOIN
+                    scenario s
+                ON
+                    d.scenario_id = s.parent_id
+            )
+            SELECT MAX(depth) FROM depth
+            ",
         )
-        SELECT MAX(depth) FROM depth
-        ",
-    )?;
+        .unwrap();
 
     if let Some(depth) = query
         .query_row((scenario_id,), |row| Ok(row.get(0)))
-        .optional()?
+        .optional()
+        .unwrap()
     {
-        let depth = depth?;
+        let depth = depth.unwrap();
 
         if let Some(depth) = depth {
-            Ok(depth)
+            depth
         } else {
-            Ok(1)
+            1
         }
     } else {
-        Ok(1)
+        1
     }
 }
 
 fn delete_scenario(
     txn: &rusqlite::Transaction,
     scenario_id: i64,
-) -> RunResult<Result<(), DeleteScenarioError>> {
+) -> Result<(), DeleteScenarioError> {
     // Verify that we exist and get some information we'll need later
-    let (parent_id, position, user_defined_id) = {
-        let mut query = txn.prepare_cached(
-            "SELECT parent_id, position, user_defined_id FROM scenario WHERE scenario_id = ?",
-        )?;
-        let query = query
-            .query_row((scenario_id,), |row| {
-                Ok((
-                    row.get::<usize, Option<i64>>(0)?,
-                    row.get::<usize, u32>(1)?,
-                    row.get(2)?,
-                ))
-            })
-            .optional()?;
+    let (parent_id, position, user_defined_id) =
+        {
+            let mut query = txn.prepare_cached(
+        "SELECT parent_id, position, user_defined_id FROM scenario WHERE scenario_id = ?",
+            ).unwrap();
+            let query = query
+                .query_row((scenario_id,), |row| {
+                    Ok((
+                        row.get::<usize, Option<i64>>(0)?,
+                        row.get::<usize, u32>(1)?,
+                        row.get(2)?,
+                    ))
+                })
+                .optional()
+                .unwrap();
 
-        if let Some(values) = query {
-            values
-        } else {
-            return Ok(Err(DeleteScenarioError::ScenarioNotFound));
-        }
-    };
+            if let Some(values) = query {
+                values
+            } else {
+                return Err(DeleteScenarioError::ScenarioNotFound);
+            }
+        };
 
     // Recursively delete our children before deleting ourself
     {
-        let mut query =
-            txn.prepare_cached("SELECT scenario_id FROM scenario WHERE parent_id = ?")?;
-        let query = query.query_map((scenario_id,), |row| row.get::<usize, i64>(0))?;
+        let mut query = txn
+            .prepare_cached("SELECT scenario_id FROM scenario WHERE parent_id = ?")
+            .unwrap();
+        let query = query
+            .query_map((scenario_id,), |row| row.get::<usize, i64>(0))
+            .unwrap();
 
         for child_id in query {
-            let child_id = child_id?;
-            let result = delete_scenario(txn, child_id)?;
+            let child_id = child_id.unwrap();
 
-            if let Some(e) = result.err() {
-                return Ok(Err(e));
-            }
+            delete_scenario(txn, child_id)?;
         }
     }
 
@@ -2070,35 +2153,41 @@ fn delete_scenario(
     // we can delete the record or not. TODO: Make sure we verify that constraint enforcement is
     // turned on.
     {
-        let mut delete = txn.prepare_cached("DELETE FROM scenario WHERE scenario_id = ?")?;
+        let mut delete = txn
+            .prepare_cached("DELETE FROM scenario WHERE scenario_id = ?")
+            .unwrap();
 
         match delete.execute((scenario_id,)) {
             Ok(_) => {}
             Err(rusqlite::Error::SqliteFailure(e, _)) => {
                 if e.code == rusqlite::ErrorCode::ConstraintViolation {
-                    return Ok(Err(DeleteScenarioError::ScenarioHasTestingData(
-                        user_defined_id,
-                    )));
+                    return Err(DeleteScenarioError::ScenarioHasTestingData(user_defined_id));
+                } else {
+                    panic!("{e:?}");
                 }
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => panic!("{e:?}"),
         }
     }
 
     // Adjust the position of any scenarios after this one to avoid any gaps
     if let Some(parent_id) = parent_id {
-        let mut update = txn.prepare_cached(
-            "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
-        )?;
-        update.execute((parent_id, position))?;
+        let mut update = txn
+            .prepare_cached(
+                "UPDATE scenario SET position = position - 1 WHERE parent_id = ? AND position > ?",
+            )
+            .unwrap();
+
+        update.execute((parent_id, position)).unwrap();
     } else {
         let mut update = txn.prepare_cached(
             "UPDATE scenario SET position = position - 1 WHERE parent_id IS NULL AND position > ?",
-        )?;
-        update.execute((position,))?;
+        ).unwrap();
+
+        update.execute((position,)).unwrap();
     }
 
-    Ok(Ok(()))
+    Ok(())
 }
 
 #[derive(Clone)]
