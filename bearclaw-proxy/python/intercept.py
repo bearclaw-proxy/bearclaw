@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import capnp
+import os
 import sys
 import time
 
@@ -57,7 +58,7 @@ class HistorySubscriberImpl(bearclaw_capnp.HistorySubscriber.Server):
 
 print('Connecting to bearclaw-proxy RPC...')
 
-client = capnp.TwoPartyClient('localhost:3092')
+client = capnp.TwoPartyClient(os.environ.get('BEARCLAW_RPC_ENDPOINT', 'localhost:3092'))
 bearclaw = client.bootstrap().cast_as(bearclaw_capnp.Bearclaw)
 
 print('Sending HTTP request and waiting for response...')
