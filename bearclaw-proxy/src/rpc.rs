@@ -218,7 +218,7 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         _: bearclaw_capnp::bearclaw::GetBuildInfoParams,
         mut results: bearclaw_capnp::bearclaw::GetBuildInfoResults,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let dirty_build = git_version::git_version!().contains("-modified");
+        let dirty_build = git_version::git_version!(fallback = "").contains("-modified");
         let mut info = results.get().init_build_info();
 
         info.set_version(&format!(
@@ -229,13 +229,14 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         info.set_is_dirty(dirty_build);
         info.set_build_timestamp(env!("VERGEN_BUILD_TIMESTAMP"));
 
+        #[allow(clippy::option_env_unwrap)]
         if option_env!("VERGEN_GIT_BRANCH").is_some() {
             let mut info = info.reborrow().init_git_info().init_some();
 
-            info.set_branch(env!("VERGEN_GIT_BRANCH"));
-            info.set_commit_count(env!("VERGEN_GIT_COMMIT_COUNT"));
-            info.set_commit_timestamp(env!("VERGEN_GIT_COMMIT_TIMESTAMP"));
-            info.set_sha(env!("VERGEN_GIT_SHA"));
+            info.set_branch(option_env!("VERGEN_GIT_BRANCH").unwrap());
+            info.set_commit_count(option_env!("VERGEN_GIT_COMMIT_COUNT").unwrap());
+            info.set_commit_timestamp(option_env!("VERGEN_GIT_COMMIT_TIMESTAMP").unwrap());
+            info.set_sha(option_env!("VERGEN_GIT_SHA").unwrap());
         } else {
             info.reborrow().init_git_info().set_none(());
         }

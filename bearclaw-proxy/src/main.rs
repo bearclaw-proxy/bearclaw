@@ -233,7 +233,7 @@ fn print_third_party_licenses() {
 }
 
 fn trace_version() {
-    let dirty_build = git_version::git_version!().contains("-modified");
+    let dirty_build = git_version::git_version!(fallback = "").contains("-modified");
 
     tracing::info!(
         "bearclaw-proxy {}{}",
