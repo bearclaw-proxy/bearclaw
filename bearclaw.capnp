@@ -318,6 +318,6 @@ struct CargoInfo {
 }
 
 struct LibraryInfo {
-	dbEngineVersion @0 :Text;
-	compressionEngineVersion @1 :Text;
+	dbEngine @0 :Text;
+	compressionEngine @1 :Text;
 }

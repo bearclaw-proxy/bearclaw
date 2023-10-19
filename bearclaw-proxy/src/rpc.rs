@@ -262,11 +262,8 @@ impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
         {
             let mut info = info.reborrow().init_library_info();
 
-            info.set_db_engine_version(&format!("sqlite {}", rusqlite::version()));
-            info.set_compression_engine_version(&format!(
-                "zstd {}",
-                zstd::zstd_safe::version_string()
-            ));
+            info.set_db_engine(&format!("sqlite {}", rusqlite::version()));
+            info.set_compression_engine(&format!("zstd {}", zstd::zstd_safe::version_string()));
         }
 
         Promise::ok(())
