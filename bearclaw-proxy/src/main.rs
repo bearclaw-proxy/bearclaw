@@ -2,7 +2,6 @@
 mod bearclaw_capnp {
     include!(concat!(env!("OUT_DIR"), "/bearclaw_capnp.rs"));
 }
-mod bootstrap_proxy;
 mod rpc;
 mod storage;
 
@@ -72,30 +71,13 @@ async fn main() -> Result<()> {
         .name("storage".to_owned())
         .spawn(move || db.run(storage_rx))?;
     let storage_channel = storage::Channel::from_sender(storage_tx);
-
-    tracing::info!("Connecting to Bootstrap Proxy");
-    let interceptor =
-        bootstrap_proxy::Interceptor::connect(args.bootstrap_proxy_endpoint.as_ref()).await?;
-
     let (death_notification_tx, mut death_notification_rx) = tokio::sync::mpsc::channel(1);
     let (shutdown_notification_tx, shutdown_notification_rx) =
         tokio::sync::watch::channel::<()>(());
-
-    tracing::info!("Running proxy interceptor");
-    tokio::task::Builder::new()
-        .name("proxy-inteceptor")
-        .spawn(proxy_task(
-            interceptor,
-            storage_channel.clone(),
-            shutdown_notification_rx.clone(),
-            death_notification_tx.clone(),
-        ))?;
-
     let (shutdown_command_tx, mut shutdown_command_rx) = tokio::sync::mpsc::channel::<()>(1);
 
     tracing::trace!("Creating thread pool to run Cap'n Proto vats");
     let rpc_spawner = RpcSpawner::new(
-        Arc::new(args.bootstrap_proxy_endpoint),
         storage_channel,
         Arc::new(shutdown_command_tx),
         shutdown_notification_rx.clone(),
@@ -152,19 +134,12 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 enum Error {
-    BootstrapProxy(bootstrap_proxy::Error),
     Channel,
     IOFailure(std::io::Error),
     OpenProjectFile(storage::OpenError),
     StorageChannel(storage::ChannelError),
     Join(tokio::task::JoinError),
     Other(Box<dyn Any + std::marker::Send>),
-}
-
-impl From<bootstrap_proxy::Error> for Error {
-    fn from(e: bootstrap_proxy::Error) -> Self {
-        Self::BootstrapProxy(e)
-    }
 }
 
 impl<T> From<tokio::sync::broadcast::error::SendError<T>> for Error {
@@ -265,10 +240,6 @@ fn trace_version() {
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
 struct Args {
-    /// Bootstrap proxy plugin endpoint to connect to. THIS IS NOT ENCRYPTED!
-    #[clap(short, long)]
-    bootstrap_proxy_endpoint: String,
-
     /// RPC endpoint to listen on. THIS IS NOT ENCRYPTED!
     #[clap(short, long, default_value = "localhost:3092")]
     rpc_endpoint: String,
@@ -286,43 +257,6 @@ struct Args {
     third_party_licenses: bool,
 }
 
-async fn proxy_task(
-    mut interceptor: bootstrap_proxy::Interceptor,
-    storage_channel: storage::Channel,
-    mut shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
-    _death_notification_tx: tokio::sync::mpsc::Sender<()>,
-) -> Result<()> {
-    loop {
-        tokio::select! {
-            message = interceptor.intercept() => {
-                let message = message?;
-                let response = if message.response.is_empty() {
-                    Err(storage::HttpError::CouldNotConnect)
-                } else {
-                    Ok(message.response)
-                };
-
-                storage_channel.store_http_history(
-                    None,
-                    storage::HttpMessage {
-                        request_time: message.received_at,
-                        response_time: message.received_at,
-                        host: message.host,
-                        port: message.port,
-                        is_https: message.is_https,
-                        request: message.request,
-                        response,
-                    },
-                ).await.unwrap();
-            }
-            _ = shutdown_notification_rx.changed() => {
-                tracing::trace!("shutting down");
-                return Ok(());
-            }
-        }
-    }
-}
-
 struct RpcSpawner {
     sender: async_channel::Sender<SpawnerPayload>,
 }
@@ -335,7 +269,6 @@ type SpawnerPayload = (
 
 impl RpcSpawner {
     fn new(
-        bootstrap_proxy_endpoint: Arc<String>,
         storage: storage::Channel,
         shutdown_command_tx: Arc<tokio::sync::mpsc::Sender<()>>,
         shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
@@ -346,7 +279,6 @@ impl RpcSpawner {
         for thread_id in 0..num_cpus::get_physical() {
             let thread_id = thread_id + 1;
             let recv: async_channel::Receiver<SpawnerPayload> = recv.clone();
-            let bootstrap_proxy_endpoint = bootstrap_proxy_endpoint.clone();
             let storage = storage.clone();
             let shutdown_command_tx = shutdown_command_tx.clone();
             let mut shutdown_notification_rx = shutdown_notification_rx.clone();
@@ -397,7 +329,6 @@ impl RpcSpawner {
                                     );
                                     let initial_object: bearclaw_capnp::bearclaw::Client =
                                         capnp_rpc::new_client(rpc::BearclawImpl::new(
-                                            bootstrap_proxy_endpoint.clone(),
                                             storage.clone(),
                                             shutdown_command_tx.deref().clone(),
                                             shutdown_notification_rx.clone(),

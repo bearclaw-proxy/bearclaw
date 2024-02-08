@@ -95,22 +95,9 @@ cargo install --locked --path bearclaw-proxy
 
 ```bash
 bearclaw-proxy \
-    --bootstrap-proxy-endpoint $BOOTSTRAP_PROXY_ENDPOINT \
     --rpc-endpoint $RPC_ENDPOINT \
     --project-file $PATH_TO_PROJECT_FILE
 ```
-
-This is an initial prototype of the proxy that bootstraps itself by using an existing
-intercepting proxy to forward and intercept messages. This is done by writing an extension or
-modification to an existing intercepting proxy that listens on `BOOTSTRAP_PROXY_ENDPOINT` for
-connections from bearclaw-proxy.
-
-The wire protocol for this extension can be found in
-[bootstrap_proxy.rs](bearclaw-proxy/src/bootstrap_proxy.rs).
-
-The extension/modification to an existing intercepting proxy is not part of this project and must
-be done yourself. This requirement will go away once our own intercepting proxy functionality is
-built.
 
 Cap'n Proto RPC connections are accepted on `RPC_ENDPOINT`. The default value is `localhost:3092`.
 This endpoint exposes the Bearclaw interface defined in [bearclaw.capnp](bearclaw.capnp). Example

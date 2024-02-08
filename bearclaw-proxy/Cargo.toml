@@ -22,7 +22,7 @@ git-version = "0.3"
 num_cpus = "1"
 num_enum = "0.5"
 rusqlite = "0.28"
-socket2 = "0.4"
+socket2 = { version = "0.5.5", features = ["all"] }
 tokio = { version = "1", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tracing = "0.1"

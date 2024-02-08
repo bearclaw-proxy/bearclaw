@@ -61,22 +61,6 @@ print('Connecting to bearclaw-proxy RPC...')
 client = capnp.TwoPartyClient(os.environ.get('BEARCLAW_RPC_ENDPOINT', 'localhost:3092'))
 bearclaw = client.bootstrap().cast_as(bearclaw_capnp.Bearclaw)
 
-print('Sending HTTP request and waiting for response...')
-
-connInfo = bearclaw_capnp.ConnectionInfo.new_message()
-connInfo.host = 'example.com'
-connInfo.port = 443
-connInfo.isHttps = True
-
-request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
-print(request)
-response = bearclaw.send(connInfo, request).wait().response
-
-if response.which() == 'some':
-    print(response.some)
-else:
-    print('No response returned')
-
 print('')
 print('Creating proxy history search...')
 

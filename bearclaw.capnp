@@ -5,36 +5,25 @@
 # This signature must be unique to this file
 
 interface Bearclaw {
-	send @2 (connInfo :ConnectionInfo, request :Data)
-		-> (response :Option(Data));
-	# Create a new connection to `conn`, send the request, and return the response received.
-	# If unable to connect or no response is received, returns 'Option::none'.
-	# This should be changed to return a `Result` with the recorded error details.
-	# The connection will only be used to send this single request.
-	# The proxy may send the request using any HTTP protocol version, irregardless of the protocol
-	# version specified in `request`.
-	# This will be removed in the future in favor of having the client create their own connections
-	# explicitly.
-
-	searchHistory @3 ()
+	searchHistory @2 ()
 		-> (historySearch :HistorySearch);
 	# Returns a list of all messages in the proxy history that match your search query (you can't
 	# specify the query yet). You can subscribe to receive notifications when new history items are
 	# created that match your query.
 
-	getHistoryItem @4 (historyId :HistoryId)
+	getHistoryItem @3 (historyId :HistoryId)
 		-> (result :Result(HttpMessage, GetHistoryItemError));
 
-	createScenario @5 (info :NewScenarioInfo)
+	createScenario @4 (info :NewScenarioInfo)
 		-> (result :Fallible(CreateScenarioError));
 
-	getScenario @6 (scenarioId :Text)
+	getScenario @5 (scenarioId :Text)
 		-> (result :Result(Scenario, GetScenarioError));
 
-	listScenarios @7 ()
+	listScenarios @6 ()
 		-> (list :List(ScenarioTreeNode));
 
-	subscribeMethodology @8 (subscriber :MethodologySubscriber)
+	subscribeMethodology @7 (subscriber :MethodologySubscriber)
 		-> (subscription :Subscription);
 
 	exit @1 ();
@@ -42,12 +31,6 @@ interface Bearclaw {
 
 	getBuildInfo @0 ()
 		-> (buildInfo :BuildInfo);
-}
-
-struct ConnectionInfo {
-	host @0 :Text;
-	port @1 :UInt16;
-	isHttps @2 :Bool;
 }
 
 struct Option(T) {
@@ -110,6 +93,12 @@ interface HttpMessage {
 	requestBytes @2 () -> (requestBytes :Data);
 	responseTimestamp @3 () -> (responseTimestamp :Time);
 	responseBytes @4 () -> (responseBytes :HttpResponse);
+}
+
+struct ConnectionInfo {
+	host @0 :Text;
+	port @1 :UInt16;
+	isHttps @2 :Bool;
 }
 
 struct Time {

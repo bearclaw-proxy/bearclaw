@@ -31,7 +31,6 @@ const MAX_SEARCH_RESULTS_RETURNED_PER_CALL: u32 = 128;
 const MAX_SCENARIO_OBJECTS_PER_RPC_CONNECTION: usize = 128;
 
 pub(super) struct BearclawImpl {
-    bootstrap_proxy_endpoint: Arc<String>,
     storage: crate::storage::Channel,
     shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
     shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
@@ -50,7 +49,6 @@ pub(super) struct BearclawImpl {
 
 impl BearclawImpl {
     pub(super) fn new(
-        bootstrap_proxy_endpoint: Arc<String>,
         storage: crate::storage::Channel,
         shutdown_command_tx: tokio::sync::mpsc::Sender<()>,
         shutdown_notification_rx: tokio::sync::watch::Receiver<()>,
@@ -59,7 +57,6 @@ impl BearclawImpl {
         client_id: usize,
     ) -> Self {
         Self {
-            bootstrap_proxy_endpoint,
             storage,
             shutdown_command_tx,
             shutdown_notification_rx,
@@ -77,44 +74,6 @@ impl BearclawImpl {
 }
 
 impl bearclaw_capnp::bearclaw::Server for BearclawImpl {
-    #[tracing::instrument(level = "trace", skip_all)]
-    fn send(
-        &mut self,
-        params: bearclaw_capnp::bearclaw::SendParams,
-        mut results: bearclaw_capnp::bearclaw::SendResults,
-    ) -> Promise<(), capnp::Error> {
-        let bootstrap_proxy_endpoint = self.bootstrap_proxy_endpoint.clone();
-
-        Promise::from_future(async move {
-            // Should these be checked outside the future?
-            let params = params.get()?;
-            let conn = params.get_conn_info()?;
-            let host = conn.get_host()?;
-            let port = conn.get_port();
-            let is_https = conn.get_is_https();
-            let request = params.get_request()?;
-
-            tracing::trace!("Connecting to bootstrap proxy to forward a request from client");
-            let mut forwarder =
-                crate::bootstrap_proxy::Forwarder::connect(&bootstrap_proxy_endpoint)
-                    .await
-                    .unwrap();
-
-            tracing::trace!("Forwarding request to bootstrap proxy");
-            let response = forwarder
-                .forward(host, port, is_https, request)
-                .await
-                .unwrap();
-
-            match response {
-                Some(response) => results.get().init_response().set_some(&response)?,
-                None => results.get().init_response().set_none(()),
-            };
-
-            Ok(())
-        })
-    }
-
     #[tracing::instrument(level = "trace", skip_all)]
     fn search_history(
         &mut self,
