@@ -420,7 +420,15 @@ async fn rpc_task(
 
         tracing::trace!("listening for a new rpc client");
         let (stream, _) = tokio::select! {
-            result = listener.accept() => { result? }
+            result = listener.accept() => {
+                match result {
+                    Ok(result) => result,
+                    Err(e) => {
+                        tracing::debug!("RPC socket accept returned error: {e:?}");
+                        continue;
+                    }
+                }
+            }
             _ = shutdown_notification_rx.changed() => {
                 tracing::trace!("shutting down");
                 return Ok(());
