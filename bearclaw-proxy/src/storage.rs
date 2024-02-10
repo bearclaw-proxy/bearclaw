@@ -85,15 +85,15 @@ impl Database {
                     reply,
                 } => {
                     let history_id = self.store_http_history(test_id, http_message);
-                    reply.send(HistoryId(history_id)).unwrap();
+                    let _ = reply.send(HistoryId(history_id));
                 }
                 Command::GetHttpHistory { history_id, reply } => {
                     let http_message = self.get_http_history(history_id);
-                    reply.send(http_message).unwrap();
+                    let _ = reply.send(http_message);
                 }
                 Command::CreateHistorySearch { reply } => {
                     let result = self.create_history_search();
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::GetHistorySearchItems {
                     history_search_id,
@@ -103,32 +103,32 @@ impl Database {
                 } => {
                     let result =
                         self.get_history_search_items(history_search_id, start_index, count);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::GetHistorySearchCount {
                     history_search_id,
                     reply,
                 } => {
                     let result = self.get_history_search_count(history_search_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::SubscribeHistorySearch {
                     history_search_id,
                     reply,
                 } => {
                     let result = self.subscribe_history_search(history_search_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::DeleteHistorySearch {
                     history_search_id,
                     reply,
                 } => {
                     let result = self.delete_history_search(history_search_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::ListScenarios { reply } => {
                     let result = self.list_scenarios();
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::CreateScenario {
                     parent,
@@ -138,14 +138,14 @@ impl Database {
                     reply,
                 } => {
                     let result = self.create_scenario(parent, user_defined_id, description, type_);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::LookupScenario {
                     user_defined_id,
                     reply,
                 } => {
                     let result = self.lookup_scenario(user_defined_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::MoveScenarioBefore {
                     move_scenario_id,
@@ -153,7 +153,7 @@ impl Database {
                     reply,
                 } => {
                     let result = self.move_scenario_before(move_scenario_id, before_scenario_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::MoveScenarioInside {
                     move_scenario_id,
@@ -161,7 +161,7 @@ impl Database {
                     reply,
                 } => {
                     let result = self.move_scenario_inside(move_scenario_id, parent_scenario_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::MoveScenarioAfter {
                     move_scenario_id,
@@ -169,15 +169,15 @@ impl Database {
                     reply,
                 } => {
                     let result = self.move_scenario_after(move_scenario_id, after_scenario_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::DeleteScenario { scenario_id, reply } => {
                     let result = self.delete_scenario(scenario_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::GetScenarioInfo { scenario_id, reply } => {
                     let result = self.get_scenario_info(scenario_id);
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::UpdateScenarioInfo {
                     scenario_id,
@@ -192,15 +192,15 @@ impl Database {
                         description,
                         previous_modified_time,
                     );
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::SubscribeScenario { reply } => {
                     let result = self.subscribe_scenario();
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
                 Command::SubscribeMethodology { reply } => {
                     let result = self.subscribe_methodology();
-                    reply.send(result).unwrap();
+                    let _ = reply.send(result);
                 }
             }
         }
