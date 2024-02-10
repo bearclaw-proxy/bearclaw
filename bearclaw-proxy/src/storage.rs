@@ -1521,10 +1521,10 @@ fn init(db: &rusqlite::Connection) -> OpenResult<()> {
 
 /// Create a new database
 fn create(db: &mut rusqlite::Connection) -> OpenResult<()> {
-    db.pragma_update(None, "application_id", APPLICATION_ID)?;
-    db.pragma_update(None, "user_version", FILE_FORMAT_VERSION)?;
-
     let txn = db.transaction()?;
+
+    txn.pragma_update(None, "application_id", APPLICATION_ID)?;
+    txn.pragma_update(None, "user_version", FILE_FORMAT_VERSION)?;
     txn.execute_batch(include_str!("../sql/create.sql"))?;
     txn.commit()?;
 
